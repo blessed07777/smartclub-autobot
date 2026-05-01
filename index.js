@@ -7,7 +7,6 @@ const PHONE_ID      = process.env.PHONE_NUMBER_ID;
 const VERIFY_TOKEN  = process.env.VERIFY_TOKEN || 'smartclub2024';
 const TEMPLATE_NAME = process.env.TEMPLATE_NAME || 'smartclub';
 
-// Запоминаем кому уже отправили шаблон (в памяти)
 const sent = new Set();
 
 // ─── Верификация webhook ──────────────────────────────────────────────────────
@@ -24,7 +23,7 @@ app.get('/webhook', (req, res) => {
 
 // ─── Входящие сообщения ───────────────────────────────────────────────────────
 app.post('/webhook', async (req, res) => {
-  res.sendStatus(200); // Быстро отвечаем Meta
+  res.sendStatus(200);
 
   try {
     const entry   = req.body?.entry?.[0];
@@ -34,12 +33,18 @@ app.post('/webhook', async (req, res) => {
     if (!msg) return;
 
     const phone = msg.from;
+    console.log(`📩 Входящее сообщение от ${phone}, тип: ${msg.type}`);
 
-    // Только текстовые сообщения и только один раз на номер
-    if (msg.type === 'text' && !sent.has(phone)) {
+    if (!sent.has(phone)) {
       sent.add(phone);
-      await sendTemplate(phone);
-      console.log(`📨 Шаблон отправлен → ${phone}`);
+
+      // Сначала пробуем шаблон
+      const ok = await sendTemplate(phone);
+
+      // Если шаблон не сработал — отправляем текст
+      if (!ok) {
+        await sendText(phone, '👋 Привет! SmartClub поможет подготовить вашего ребёнка к НИШ, РФМШ, БИЛ или ЕНТ.\n\nОтветьте *1* чтобы узнать подробнее о программах.');
+      }
     }
 
   } catch (err) {
@@ -47,7 +52,7 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// ─── Отправка шаблона с кнопкой Flow ─────────────────────────────────────────
+// ─── Отправка шаблона ─────────────────────────────────────────────────────────
 async function sendTemplate(phone) {
   const url  = `https://graph.facebook.com/v19.0/${PHONE_ID}/messages`;
   const body = {
@@ -62,12 +67,7 @@ async function sendTemplate(phone) {
           type: 'button',
           sub_type: 'flow',
           index: '0',
-          parameters: [
-            {
-              type: 'action',
-              action: { flow_token: phone }
-            }
-          ]
+          parameters: [{ type: 'action', action: { flow_token: phone } }]
         }
       ]
     }
@@ -75,22 +75,43 @@ async function sendTemplate(phone) {
 
   const response = await fetch(url, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${TOKEN}`
-    },
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
     body: JSON.stringify(body)
   });
 
   const result = await response.json();
   if (result.error) {
-    console.error('❌ WhatsApp API ошибка:', result.error.message);
+    console.error('❌ Шаблон не отправлен:', result.error.message);
+    return false;
+  }
+  console.log(`📨 Шаблон отправлен → ${phone}`);
+  return true;
+}
+
+// ─── Отправка текста ──────────────────────────────────────────────────────────
+async function sendText(phone, text) {
+  const url  = `https://graph.facebook.com/v19.0/${PHONE_ID}/messages`;
+  const body = {
+    messaging_product: 'whatsapp',
+    to: phone,
+    type: 'text',
+    text: { body: text }
+  };
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
+    body: JSON.stringify(body)
+  });
+
+  const result = await response.json();
+  if (result.error) {
+    console.error('❌ Текст не отправлен:', result.error.message);
   } else {
-    console.log('✅ Сообщение отправлено:', result.messages?.[0]?.id);
+    console.log(`✉️ Текст отправлен → ${phone}`);
   }
 }
 
-// ─── Запуск ───────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`✅ SmartClub Autobot запущен на порту ${PORT}`);
