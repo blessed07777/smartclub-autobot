@@ -183,6 +183,7 @@ app.post('/webhook', async (req, res) => {
       const grade    = GRADE_LABEL[gradeRaw] || gradeRaw;
 
       const now = new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Almaty' });
+      // Колонки: Дата | Имя | Телефон (из WhatsApp) | Класс | Программа | Статус
       const row = [now, name, ph, grade, progLabel, 'Новая заявка'];
 
       console.log(`✅ ЗАЯВКА: ${name} | ${ph} | ${grade} | ${progLabel}`);
@@ -191,7 +192,7 @@ app.post('/webhook', async (req, res) => {
       // Подтверждение клиенту
       const confirmText =
         `✅ Заявка принята!\n\n` +
-        `📱 ${ph}\n` +
+        `👤 ${name}\n` +
         `🎓 ${grade} → ${progLabel}\n\n` +
         `Менеджер свяжется с вами в течение 30 минут.\n\n` +
         `📍 Алматы, ул. Байзакова 280\n📞 +7 (707) 900-30-11`;
