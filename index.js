@@ -86,7 +86,7 @@ async function sendFlowTemplate(phone) {
     type: 'template',
     template: {
       name: TEMPLATE_NAME,
-      language: { code: 'ru' },
+      language: { code: 'en' },
       components: [
         {
           type: 'button',
