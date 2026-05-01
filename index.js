@@ -7,25 +7,19 @@ const TOKEN           = process.env.WHATSAPP_TOKEN;
 const PHONE_ID        = process.env.PHONE_NUMBER_ID;
 const VERIFY_TOKEN    = process.env.VERIFY_TOKEN    || 'smartclub2024';
 const TEMPLATE_NAME   = process.env.TEMPLATE_NAME   || 'smartclub_quiz';
-const FLOW_SERVER_URL = process.env.FLOW_SERVER_URL  || ''; // https://smartclub-flow-production.up.railway.app
+const FLOW_SERVER_URL = process.env.FLOW_SERVER_URL  || '';
 
 const SPREADSHEET_ID   = process.env.SPREADSHEET_ID   || '';
 const GOOGLE_CREDS_RAW = process.env.GOOGLE_CREDENTIALS || '';
 
+// Номера от которых уже отправлен шаблон
 const sent = new Set();
 
-const GRADE_LABEL = {
-  g3:  '3–4 класс',
-  g5:  '5–6 класс',
-  g7:  '7–9 класс',
-  g10: '10–11 класс'
-};
-const GOAL_LABEL = {
-  nil:   'НИШ',
-  rfmsh: 'РФМШ',
-  bil:   'БИЛ',
-  ent:   'ЕНТ'
-};
+// Номера ожидающие ввода имени: phone → { grade, program, date }
+const awaitingName = new Map();
+
+const GRADE_LABEL = { g3: '3–4 класс', g5: '5–6 класс', g7: '7–9 класс', g10: '10–11 класс' };
+const GOAL_LABEL  = { nil: 'НИШ', rfmsh: 'РФМШ', bil: 'БИЛ', ent: 'ЕНТ' };
 
 // ─── Google Sheets ────────────────────────────────────────────────────────────
 async function appendToSheet(row) {
@@ -57,41 +51,28 @@ async function getSession(phone) {
   if (!FLOW_SERVER_URL) return {};
   try {
     const r = await fetch(`${FLOW_SERVER_URL}/session/${phone}`);
-    const data = await r.json();
-    console.log(`📂 Сессия для ${phone}:`, JSON.stringify(data));
-    return data;
+    return await r.json();
   } catch (e) {
     console.error('❌ Ошибка получения сессии:', e.message);
     return {};
   }
 }
 
-// ─── Отправка текстового сообщения ───────────────────────────────────────────
+// ─── Отправка сообщения ───────────────────────────────────────────────────────
 async function sendMessage(to, text) {
   const url  = `https://graph.facebook.com/v19.0/${PHONE_ID}/messages`;
-  const body = {
-    messaging_product: 'whatsapp',
-    to,
-    type: 'text',
-    text: { body: text }
-  };
-  const response = await fetch(url, {
+  const body = { messaging_product: 'whatsapp', to, type: 'text', text: { body: text } };
+  const r = await fetch(url, {
     method: 'POST',
-    headers: {
-      'Content-Type':  'application/json',
-      'Authorization': `Bearer ${TOKEN}`
-    },
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
     body: JSON.stringify(body)
   });
-  const result = await response.json();
-  if (result.error) {
-    console.error('❌ Ошибка отправки сообщения:', result.error.message);
-  } else {
-    console.log(`📤 Сообщение отправлено → ${to}`);
-  }
+  const result = await r.json();
+  if (result.error) console.error('❌ Ошибка отправки:', result.error.message);
+  else console.log(`📤 Отправлено → ${to}`);
 }
 
-// ─── Отправка шаблона с Flow ──────────────────────────────────────────────────
+// ─── Отправка шаблона ─────────────────────────────────────────────────────────
 async function sendFlowTemplate(phone) {
   const url  = `https://graph.facebook.com/v19.0/${PHONE_ID}/messages`;
   const body = {
@@ -101,37 +82,25 @@ async function sendFlowTemplate(phone) {
     template: {
       name: TEMPLATE_NAME,
       language: { code: 'en' },
-      components: [
-        {
-          type: 'button',
-          sub_type: 'flow',
-          index: '0',
-          parameters: [{ type: 'action', action: { flow_token: phone } }]
-        }
-      ]
+      components: [{
+        type: 'button', sub_type: 'flow', index: '0',
+        parameters: [{ type: 'action', action: { flow_token: phone } }]
+      }]
     }
   };
-  const response = await fetch(url, {
+  const r = await fetch(url, {
     method: 'POST',
-    headers: {
-      'Content-Type':  'application/json',
-      'Authorization': `Bearer ${TOKEN}`
-    },
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
     body: JSON.stringify(body)
   });
-  const result = await response.json();
-  if (result.error) {
-    console.error('❌ Ошибка отправки шаблона:', result.error.message);
-  } else {
-    console.log(`📨 Шаблон отправлен → ${phone} | id: ${result.messages?.[0]?.id}`);
-  }
+  const result = await r.json();
+  if (result.error) console.error('❌ Ошибка шаблона:', result.error.message);
+  else console.log(`📨 Шаблон отправлен → ${phone}`);
 }
 
 // ─── Верификация webhook ───────────────────────────────────────────────────────
 app.get('/webhook', (req, res) => {
-  const mode      = req.query['hub.mode'];
-  const token     = req.query['hub.verify_token'];
-  const challenge = req.query['hub.challenge'];
+  const mode = req.query['hub.mode'], token = req.query['hub.verify_token'], challenge = req.query['hub.challenge'];
   if (mode === 'subscribe' && token === VERIFY_TOKEN) {
     console.log('✅ Webhook верифицирован');
     return res.status(200).send(challenge);
@@ -143,67 +112,69 @@ app.get('/webhook', (req, res) => {
 app.post('/webhook', async (req, res) => {
   res.sendStatus(200);
   try {
-    const entry   = req.body?.entry?.[0];
-    const changes = entry?.changes?.[0];
-    const value   = changes?.value;
-    const msg     = value?.messages?.[0];
+    const msg = req.body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     if (!msg) return;
 
     const phone = msg.from;
     console.log(`📩 От ${phone} | type="${msg.type}" interactive_type="${msg.interactive?.type || ''}"`);
 
-    // ── nfm_reply: Flow завершён ──────────────────────────────────────────────
+    // ── 1. nfm_reply: Flow завершён ──────────────────────────────────────────
     if (msg.type === 'interactive' && msg.interactive?.type === 'nfm_reply') {
       console.log('🔔 nfm_reply!');
-      console.log('📦 raw:', JSON.stringify(msg.interactive.nfm_reply));
 
-      // Парсим response_json
       let fd = {};
       try {
         const raw = msg.interactive.nfm_reply?.response_json;
         fd = typeof raw === 'string' ? JSON.parse(raw) : (raw || {});
-      } catch (e) {
-        console.error('❌ Ошибка парсинга response_json:', e.message);
-      }
+      } catch (e) {}
       console.log('📋 formData:', JSON.stringify(fd));
 
-      // Программа из статического поля (всегда приходит)
-      const program  = fd.program || fd.client_goal || '—';
+      const program   = fd.program || '—';
       const progLabel = GOAL_LABEL[program] || program.toUpperCase();
 
-      // Телефон из msg.from (всегда известен)
-      const ph = phone;
-
-      // Имя из формы (может не прийти)
-      const name = fd.contact_name || fd.name || '—';
-
-      // Класс из сессии flow-сервера (сохранён при выборе квиза)
       const session  = await getSession(phone);
-      const gradeRaw = session.grade || fd.client_grade || '—';
+      const gradeRaw = session.grade || '—';
       const grade    = GRADE_LABEL[gradeRaw] || gradeRaw;
 
       const now = new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Almaty' });
-      // Колонки: Дата | Имя | Телефон (из WhatsApp) | Класс | Программа | Статус
-      const row = [now, name, ph, grade, progLabel, 'Новая заявка'];
 
-      console.log(`✅ ЗАЯВКА: ${name} | ${ph} | ${grade} | ${progLabel}`);
-      await appendToSheet(row);
+      // Сохраняем данные, ждём имя
+      awaitingName.set(phone, { grade, progLabel, now, phone });
+      console.log(`⏳ Ждём имя от ${phone}`);
 
-      // Подтверждение клиенту
-      const confirmText =
-        `✅ Заявка принята!\n\n` +
-        `👤 ${name}\n` +
-        `🎓 ${grade} → ${progLabel}\n\n` +
-        `Менеджер свяжется с вами в течение 30 минут.\n\n` +
-        `📍 Алматы, ул. Байзакова 280\n📞 +7 (707) 900-30-11`;
-      await sendMessage(phone, confirmText);
+      // Спрашиваем имя
+      await sendMessage(phone,
+        `✅ Отлично! Вы выбрали программу *${progLabel}* (${grade}).\n\nКак вас зовут? Напишите своё имя в ответ на это сообщение.`
+      );
       return;
     }
 
-    // ── Обычное сообщение: отправляем шаблон с Flow ───────────────────────────
-    if (!sent.has(phone)) {
-      sent.add(phone);
-      await sendFlowTemplate(phone);
+    // ── 2. Текстовое сообщение — возможно это имя ────────────────────────────
+    if (msg.type === 'text') {
+      const text = msg.text?.body?.trim();
+
+      if (awaitingName.has(phone)) {
+        // Это имя!
+        const { grade, progLabel, now } = awaitingName.get(phone);
+        awaitingName.delete(phone);
+
+        const name = text || '—';
+        const row  = [now, name, phone, grade, progLabel, 'Новая заявка'];
+
+        console.log(`✅ ЗАЯВКА: ${name} | ${phone} | ${grade} | ${progLabel}`);
+        await appendToSheet(row);
+
+        await sendMessage(phone,
+          `Спасибо, *${name}*! 🎉\n\nМенеджер свяжется с вами в течение 30 минут и согласует время пробного урока.\n\n📍 Алматы, ул. Байзакова 280\n📞 +7 (707) 900-30-11`
+        );
+        return;
+      }
+
+      // Обычное первое сообщение → отправить шаблон
+      if (!sent.has(phone)) {
+        sent.add(phone);
+        await sendFlowTemplate(phone);
+      }
     }
 
   } catch (err) {
