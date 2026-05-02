@@ -108,7 +108,7 @@ async function sendFlowTemplate(to, gradeId, goalId) {
     type: 'template',
     template: {
       name: TEMPLATE_NAME,
-      language: { code: 'ru' },
+      language: { code: 'en' },
       components: [{
         type: 'button', sub_type: 'flow', index: '0',
         parameters: [{ type: 'action', action: { flow_token: flowToken } }]
@@ -116,6 +116,7 @@ async function sendFlowTemplate(to, gradeId, goalId) {
     }
   });
   console.log(`📨 flow template → ${to} | token=${flowToken}`);
+  console.log(`📬 WA response:`, JSON.stringify(result));
   return result;
 }
 
@@ -169,8 +170,10 @@ app.post('/webhook', async (req, res) => {
         userState.set(phone, { ...st, state: 'awaiting_flow', goal: id });
         const result = await sendFlowTemplate(phone, st.grade, id);
         if (!result?.messages?.[0]?.id) {
-          userState.delete(phone);
-          await sendText(phone, '⚠️ Что-то пошло не так. Напишите нам снова.');
+          console.error('❌ Шаблон не отправлен:', JSON.stringify(result));
+          userState.set(phone, { state: 'grade' });
+          await sendText(phone, '⚠️ Не удалось открыть карточку программы. Попробуйте ещё раз 👇');
+          await sendGradeList(phone);
         }
 
       } else if (st.state === 'awaiting_flow') {
