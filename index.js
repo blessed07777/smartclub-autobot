@@ -5,26 +5,24 @@ app.use(express.json());
 
 const TOKEN            = process.env.WHATSAPP_TOKEN;
 const PHONE_ID         = process.env.PHONE_NUMBER_ID;
-const VERIFY_TOKEN     = process.env.VERIFY_TOKEN     || 'smartclub2024';
-const TEMPLATE_NAME    = process.env.TEMPLATE_NAME    || 'smartclub_quiz';
-const SPREADSHEET_ID   = process.env.SPREADSHEET_ID   || '';
+const VERIFY_TOKEN     = process.env.VERIFY_TOKEN   || 'smartclub2024';
+const TEMPLATE_NAME    = process.env.TEMPLATE_NAME  || 'smartclub_quiz';
+const SPREADSHEET_ID   = process.env.SPREADSHEET_ID || '';
 const GOOGLE_CREDS_RAW = process.env.GOOGLE_CREDENTIALS || '';
 
-// ─── Словари ──────────────────────────────────────────────────────────────────
-const GRADE_MAP   = { '1': 'g3', '2': 'g5', '3': 'g7', '4': 'g10' };
-const GOAL_MAP    = { '1': 'nil', '2': 'rfmsh', '3': 'bil', '4': 'ent' };
+// ─── Справочники ──────────────────────────────────────────────────────────────
 const GRADE_LABEL = { g3: '3–4 класс', g5: '5–6 класс', g7: '7–9 класс', g10: '10–11 класс' };
 const GOAL_LABEL  = { nil: 'НИШ', rfmsh: 'РФМШ', bil: 'БИЛ', ent: 'ЕНТ' };
 
 // ─── Состояние пользователей ──────────────────────────────────────────────────
-// phone → { state, grade, goal, program, now }
+// phone → { state, grade, goal, now }
 // state: 'grade' | 'goal' | 'awaiting_flow' | 'name'
 const userState = new Map();
 
 // ─── Google Sheets ────────────────────────────────────────────────────────────
 async function appendToSheet(row) {
   if (!SPREADSHEET_ID || !GOOGLE_CREDS_RAW) {
-    console.log('[Sheets] Переменные не заданы, пропускаем');
+    console.log('[Sheets] переменные не заданы');
     return;
   }
   try {
@@ -40,73 +38,130 @@ async function appendToSheet(row) {
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: [row] }
     });
-    console.log('📊 Записано в таблицу:', row);
+    console.log('📊 Записано:', row);
   } catch (e) {
-    console.error('❌ Ошибка Google Sheets:', e.message);
+    console.error('❌ Sheets:', e.message);
   }
 }
 
-// ─── Отправка текстового сообщения ───────────────────────────────────────────
-async function sendMessage(to, text) {
-  try {
-    const r = await fetch(`https://graph.facebook.com/v19.0/${PHONE_ID}/messages`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
-      body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'text', text: { body: text } })
-    });
-    const result = await r.json();
-    if (result.error) console.error('❌ sendMessage error:', result.error.message);
-    else console.log(`📤 Сообщение → ${to}`);
-  } catch (e) {
-    console.error('❌ sendMessage exception:', e.message);
-  }
+// ─── Базовый fetch helper ─────────────────────────────────────────────────────
+async function waPost(body) {
+  const r = await fetch(`https://graph.facebook.com/v19.0/${PHONE_ID}/messages`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${TOKEN}`
+    },
+    body: JSON.stringify(body)
+  });
+  const result = await r.json();
+  if (result.error) console.error('❌ WA API:', result.error.message);
+  return result;
 }
 
-// ─── Отправка шаблона с Flow (с данными о классе и цели) ─────────────────────
-async function sendFlowTemplate(phone, gradeId, goalId) {
-  try {
-    const body = {
-      messaging_product: 'whatsapp',
-      to: phone,
-      type: 'template',
-      template: {
-        name: TEMPLATE_NAME,
-        language: { code: 'en' },
-        components: [{
-          type: 'button',
-          sub_type: 'flow',
-          index: '0',
-          parameters: [{
-            type: 'action',
-            action: {
-              flow_token: phone,
-              flow_action_payload: {
-                data: {
-                  client_grade: gradeId,
-                  client_goal: goalId
-                }
-              }
-            }
-          }]
+// ─── Отправка обычного текста ─────────────────────────────────────────────────
+async function sendText(to, text) {
+  await waPost({ messaging_product: 'whatsapp', to, type: 'text', text: { body: text } });
+  console.log(`📤 text → ${to}`);
+}
+
+// ─── Список выбора класса (List Message) ─────────────────────────────────────
+async function sendGradeList(to) {
+  await waPost({
+    messaging_product: 'whatsapp',
+    to,
+    type: 'interactive',
+    interactive: {
+      type: 'list',
+      header: { type: 'text', text: 'SmartClub' },
+      body:   { text: 'В каком классе ваш ребёнок? Выберите из списка 👇' },
+      footer: { text: 'SmartClub · Алматы' },
+      action: {
+        button: 'Выбрать класс',
+        sections: [{
+          title: 'Класс ребёнка',
+          rows: [
+            { id: 'g3',  title: '3–4 класс'   },
+            { id: 'g5',  title: '5–6 класс'   },
+            { id: 'g7',  title: '7–9 класс'   },
+            { id: 'g10', title: '10–11 класс'  }
+          ]
         }]
       }
-    };
-    const r = await fetch(`https://graph.facebook.com/v19.0/${PHONE_ID}/messages`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
-      body: JSON.stringify(body)
-    });
-    const result = await r.json();
-    if (result.error) console.error('❌ sendFlowTemplate error:', result.error.message);
-    else console.log(`📨 Шаблон → ${phone} | grade=${gradeId} goal=${goalId}`);
-  } catch (e) {
-    console.error('❌ sendFlowTemplate exception:', e.message);
-  }
+    }
+  });
+  console.log(`📋 grade list → ${to}`);
+}
+
+// ─── Список выбора цели (List Message) ───────────────────────────────────────
+async function sendGoalList(to, gradLabel) {
+  await waPost({
+    messaging_product: 'whatsapp',
+    to,
+    type: 'interactive',
+    interactive: {
+      type: 'list',
+      header: { type: 'text', text: gradLabel },
+      body:   { text: 'Отлично! Теперь выберите цель поступления 👇' },
+      footer: { text: 'SmartClub · Алматы' },
+      action: {
+        button: 'Выбрать цель',
+        sections: [{
+          title: 'Цель',
+          rows: [
+            { id: 'nil',   title: 'НИШ',  description: 'Назарбаев Интеллектуальные Школы' },
+            { id: 'rfmsh', title: 'РФМШ', description: 'Республиканская физмат школа'      },
+            { id: 'bil',   title: 'БИЛ',  description: 'Bilim Innovation Lyceum'           },
+            { id: 'ent',   title: 'ЕНТ',  description: 'Единое национальное тестирование'  }
+          ]
+        }]
+      }
+    }
+  });
+  console.log(`📋 goal list → ${to}`);
+}
+
+// ─── Отправка шаблона с Flow ──────────────────────────────────────────────────
+// flow_token кодирует: phone|grade|goal  →  расшифровывается в nfm_reply
+async function sendFlowTemplate(phone, gradeId, goalId) {
+  const flowToken = `${phone}|${gradeId}|${goalId}`;
+  const result = await waPost({
+    messaging_product: 'whatsapp',
+    to: phone,
+    type: 'template',
+    template: {
+      name: TEMPLATE_NAME,
+      language: { code: 'en' },
+      components: [{
+        type: 'button',
+        sub_type: 'flow',
+        index: '0',
+        parameters: [{
+          type: 'action',
+          action: {
+            flow_token: flowToken,
+            // Передаём grade+goal на flow-сервер — он откроет правильный экран
+            flow_action_payload: {
+              data: {
+                client_grade: gradeId,
+                client_goal:  goalId
+              }
+            }
+          }
+        }]
+      }]
+    }
+  });
+  console.log(`📨 flow template → ${phone} | token=${flowToken}`);
+  return result;
 }
 
 // ─── Верификация webhook ───────────────────────────────────────────────────────
 app.get('/webhook', (req, res) => {
-  if (req.query['hub.mode'] === 'subscribe' && req.query['hub.verify_token'] === VERIFY_TOKEN) {
+  if (
+    req.query['hub.mode'] === 'subscribe' &&
+    req.query['hub.verify_token'] === VERIFY_TOKEN
+  ) {
     console.log('✅ Webhook верифицирован');
     return res.status(200).send(req.query['hub.challenge']);
   }
@@ -122,107 +177,98 @@ app.post('/webhook', async (req, res) => {
 
     const phone = msg.from;
     const st    = userState.get(phone) || { state: 'new' };
-    console.log(`📩 ${phone} | type=${msg.type} | state=${st.state}`);
+    console.log(`📩 ${phone} | type=${msg.type} | interactive_type=${msg.interactive?.type || '-'} | state=${st.state}`);
 
-    // ── nfm_reply: пользователь нажал «Записаться» во флоу ───────────────────
+    // ── 1. nfm_reply: пользователь нажал «Записаться» во флоу ────────────────
     if (msg.type === 'interactive' && msg.interactive?.type === 'nfm_reply') {
-      console.log('🔔 nfm_reply:', JSON.stringify(msg.interactive.nfm_reply));
+      console.log('🔔 nfm_reply raw:', JSON.stringify(msg.interactive.nfm_reply));
 
+      // Парсим response_json (program — статический, всегда приходит)
       let fd = {};
       try {
         const raw = msg.interactive.nfm_reply?.response_json;
         fd = typeof raw === 'string' ? JSON.parse(raw) : (raw || {});
       } catch (e) {}
 
-      // program всегда статический — всегда приходит
-      const program   = fd.program || st.goal || '—';
-      const progLabel = GOAL_LABEL[program] || program.toUpperCase();
-      const gradeLabel = GRADE_LABEL[st.grade] || st.grade || '—';
+      // Расшифровываем flow_token: "phone|grade|goal"
+      const token = fd.flow_token || '';
+      const parts = token.split('|');
+      const gradeId = parts[1] || st.grade || '';
+      const goalId  = parts[2] || st.goal  || fd.program || '';
+
+      const gradeLabel = GRADE_LABEL[gradeId] || gradeId || '—';
+      const goalLabel  = GOAL_LABEL[goalId]   || goalId  || '—';
       const now = new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Almaty' });
 
-      userState.set(phone, { ...st, state: 'name', program, now });
+      console.log(`🎯 Из flow_token: grade=${gradeId} goal=${goalId}`);
 
-      await sendMessage(phone,
-        `Отлично! Вы выбрали программу *${progLabel}* (${gradeLabel}) 🎓\n\n` +
-        `Как вас зовут? Напишите имя в ответ на это сообщение.`
+      userState.set(phone, { ...st, state: 'name', grade: gradeId, goal: goalId, now });
+
+      await sendText(phone,
+        `Отлично! Вы выбрали *${goalLabel}* · ${gradeLabel} 🎓\n\n` +
+        `Как вас зовут? Напишите имя — и мы сохраним заявку.`
       );
       return;
     }
 
-    // ── Текстовое сообщение ───────────────────────────────────────────────────
+    // ── 2. list_reply: пользователь выбрал из списка ─────────────────────────
+    if (msg.type === 'interactive' && msg.interactive?.type === 'list_reply') {
+      const id    = msg.interactive.list_reply?.id    || '';
+      const title = msg.interactive.list_reply?.title || '';
+      console.log(`📌 list_reply: id="${id}" title="${title}"`);
+
+      if (st.state === 'grade') {
+        // Выбрали класс → спрашиваем цель
+        userState.set(phone, { ...st, state: 'goal', grade: id });
+        await sendGoalList(phone, GRADE_LABEL[id] || title);
+
+      } else if (st.state === 'goal') {
+        // Выбрали цель → отправляем флоу с нужным экраном
+        userState.set(phone, { ...st, state: 'awaiting_flow', goal: id });
+        await sendFlowTemplate(phone, st.grade, id);
+        await sendText(phone,
+          `${GOAL_LABEL[id]} · ${GRADE_LABEL[st.grade]} 📚\n\n` +
+          `Откройте карточку выше — там программа и тарифы.\n` +
+          `Нажмите *«Записаться на пробный урок»* чтобы оставить заявку.`
+        );
+      }
+      return;
+    }
+
+    // ── 3. Текстовое сообщение ────────────────────────────────────────────────
     if (msg.type === 'text') {
       const text = (msg.text?.body || '').trim();
 
-      // Новый пользователь — спрашиваем класс
-      if (st.state === 'new') {
-        userState.set(phone, { state: 'grade' });
-        await sendMessage(phone,
-          '👋 Привет! SmartClub — подготовка к поступлению в НИШ, РФМШ, БИЛ и к ЕНТ.\n\n' +
-          '*В каком классе ваш ребёнок?*\n\n' +
-          '1️⃣  3–4 класс\n' +
-          '2️⃣  5–6 класс\n' +
-          '3️⃣  7–9 класс\n' +
-          '4️⃣  10–11 класс\n\n' +
-          'Ответьте цифрой 1, 2, 3 или 4'
-        );
-
-      // Ждём класс
-      } else if (st.state === 'grade') {
-        const gradeId = GRADE_MAP[text];
-        if (!gradeId) {
-          await sendMessage(phone, '⚠️ Пожалуйста, ответьте цифрой 1, 2, 3 или 4');
-        } else {
-          userState.set(phone, { ...st, state: 'goal', grade: gradeId });
-          await sendMessage(phone,
-            `${GRADE_LABEL[gradeId]} ✅\n\n` +
-            '*Какая цель поступления?*\n\n' +
-            '1️⃣  НИШ — Назарбаев Интеллектуальные Школы\n' +
-            '2️⃣  РФМШ — Республиканская физмат школа\n' +
-            '3️⃣  БИЛ — Bilim Innovation Lyceum\n' +
-            '4️⃣  ЕНТ — Единое национальное тестирование\n\n' +
-            'Ответьте цифрой 1, 2, 3 или 4'
-          );
-        }
-
-      // Ждём цель
-      } else if (st.state === 'goal') {
-        const goalId = GOAL_MAP[text];
-        if (!goalId) {
-          await sendMessage(phone, '⚠️ Пожалуйста, ответьте цифрой 1, 2, 3 или 4');
-        } else {
-          userState.set(phone, { ...st, state: 'awaiting_flow', goal: goalId });
-          // Отправляем шаблон с флоу — флоу откроется на правильном экране
-          await sendFlowTemplate(phone, st.grade, goalId);
-          await sendMessage(phone,
-            `${GOAL_LABEL[goalId]} · ${GRADE_LABEL[st.grade]} 📚\n\n` +
-            `Откройте карточку выше — там подробнее о программе и тарифах.\n` +
-            `Нажмите *«Записаться на пробный урок»* чтобы оставить заявку.`
-          );
-        }
-
-      // Ждём имя (после нажатия «Записаться» во флоу)
-      } else if (st.state === 'name') {
-        const { grade, program, now } = st;
+      if (st.state === 'name') {
+        // Получили имя — сохраняем всё в Sheets
+        const { grade, goal, now } = st;
         userState.delete(phone);
 
-        const name       = text;
         const gradeLabel = GRADE_LABEL[grade] || grade || '—';
-        const progLabel  = GOAL_LABEL[program] || program || '—';
-        const row = [now, name, phone, gradeLabel, progLabel, 'Новая заявка'];
+        const goalLabel  = GOAL_LABEL[goal]   || goal  || '—';
+        const row = [now, text, phone, gradeLabel, goalLabel, 'Новая заявка'];
 
-        console.log(`✅ ЗАЯВКА: ${name} | ${phone} | ${gradeLabel} | ${progLabel}`);
+        console.log(`✅ ЗАЯВКА: ${text} | ${phone} | ${gradeLabel} | ${goalLabel}`);
         await appendToSheet(row);
 
-        await sendMessage(phone,
-          `Спасибо, *${name}*! 🎉\n\n` +
-          `Менеджер свяжется с вами в течение 30 минут и согласует время пробного урока.\n\n` +
+        await sendText(phone,
+          `Спасибо, *${text}*! 🎉\n\n` +
+          `Менеджер свяжется с вами в течение 30 минут.\n\n` +
           `📍 Алматы, ул. Байзакова 280\n` +
           `📞 +7 (707) 900-30-11`
         );
 
-      // Ждём пока пользователь откроет флоу
       } else if (st.state === 'awaiting_flow') {
-        await sendMessage(phone, '👆 Откройте карточку выше, посмотрите программу и нажмите «Записаться».');
+        await sendText(phone, '👆 Откройте карточку выше, посмотрите программу и нажмите «Записаться».');
+
+      } else {
+        // Любое первое сообщение → начинаем квиз
+        userState.set(phone, { state: 'grade' });
+        await sendText(phone,
+          '👋 Привет! SmartClub — подготовка к поступлению в НИШ, РФМШ, БИЛ и к ЕНТ.\n\n' +
+          'Наши ученики поступают с первого раза. Подберём программу за 30 секунд 👇'
+        );
+        await sendGradeList(phone);
       }
     }
 
@@ -235,8 +281,8 @@ app.post('/webhook', async (req, res) => {
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`✅ SmartClub Autobot запущен на порту ${PORT}`);
-  console.log(`🔑 Token:      ${TOKEN      ? 'задан' : '❌ НЕ ЗАДАН'}`);
-  console.log(`📱 Phone ID:   ${PHONE_ID   || '❌ НЕ ЗАДАН'}`);
-  console.log(`📋 Шаблон:     ${TEMPLATE_NAME}`);
-  console.log(`📊 Sheets ID:  ${SPREADSHEET_ID || '❌ не задан'}`);
+  console.log(`🔑 Token:     ${TOKEN      ? 'задан' : '❌ НЕ ЗАДАН'}`);
+  console.log(`📱 Phone ID:  ${PHONE_ID   || '❌ НЕ ЗАДАН'}`);
+  console.log(`📋 Шаблон:    ${TEMPLATE_NAME}`);
+  console.log(`📊 Sheets ID: ${SPREADSHEET_ID || '❌ не задан'}`);
 });
