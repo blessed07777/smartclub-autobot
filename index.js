@@ -217,6 +217,18 @@ app.post('/webhook', async (req, res) => {
           userState.delete(phone);
           await sendText(phone, '⚠️ Что-то пошло не так. Напишите нам снова — мы всё исправим.');
         }
+
+      } else if (st.state === 'awaiting_flow') {
+        // Пользователь нажал на список пока ждём флоу — напоминаем
+        await sendText(phone,
+          `⬆️ Карточка с программой уже отправлена выше.\n\n` +
+          `Откройте её и нажмите *«Записаться на пробный урок»* 👆`
+        );
+
+      } else {
+        // Неожиданный list_reply в другом состоянии — начинаем сначала
+        userState.set(phone, { state: 'grade' });
+        await sendWelcome(phone);
       }
       return;
     }
