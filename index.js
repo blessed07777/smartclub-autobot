@@ -12,15 +12,7 @@ const GOOGLE_CREDS_RAW = process.env.GOOGLE_CREDENTIALS || '';
 
 // ─── Справочники ──────────────────────────────────────────────────────────────
 const GRADE_LABEL = { g3: '3–4 класс', g5: '5–6 класс', g7: '7–9 класс', g10: '10–11 класс' };
-const GOAL_LABEL  = { nil: 'НИШ', rfmsh: 'РФМШ', bil: 'БИЛ', ent: 'ЕНТ' };
-
-// Продающие описания для каждого этапа выбора цели
-const GOAL_DESCRIPTION = {
-  nil:   'Самые престижные школы Казахстана',
-  rfmsh: 'Для будущих учёных и инженеров',
-  bil:   'Современный лицей с международным уклоном',
-  ent:   'Максимальный балл для поступления в вуз'
-};
+const GOAL_LABEL  = { nil: 'НИШ', rfmsh: 'РФМШ', bil: 'БИЛ', ent: 'ЕНТ', combo: 'НИШ + РФМШ + КТЛ' };
 
 // ─── Состояние пользователей ──────────────────────────────────────────────────
 const userState = new Map();
@@ -84,7 +76,7 @@ async function sendGradeList(to) {
       type: 'list',
       header: { type: 'text', text: '📚 Шаг 1 из 2' },
       body:   { text: 'В каком классе учится ваш ребёнок?' },
-      footer: { text: 'SmartClub · Алматы · +7 707 900 30 11' },
+      footer: { text: 'SmartClub · Астана' },
       action: {
         button: 'Выбрать класс',
         sections: [{
@@ -111,16 +103,17 @@ async function sendGoalList(to, gradeLabel) {
       type: 'list',
       header: { type: 'text', text: `📚 Шаг 2 из 2 · ${gradeLabel}` },
       body:   { text: 'Отлично! Теперь выберите цель поступления:' },
-      footer: { text: 'SmartClub · Алматы · +7 707 900 30 11' },
+      footer: { text: 'SmartClub · Астана' },
       action: {
         button: 'Выбрать цель',
         sections: [{
           title: 'Цель поступления',
           rows: [
-            { id: 'nil',   title: 'НИШ',  description: 'Назарбаев Интеллектуальные Школы' },
-            { id: 'rfmsh', title: 'РФМШ', description: 'Республиканская физмат школа'      },
-            { id: 'bil',   title: 'БИЛ',  description: 'Bilim Innovation Lyceum'           },
-            { id: 'ent',   title: 'ЕНТ',  description: 'Единое национальное тестирование'  }
+            { id: 'nil',   title: 'НИШ',           description: 'Назарбаев Интеллектуальные Школы' },
+            { id: 'rfmsh', title: 'РФМШ',          description: 'Республиканская физмат школа'      },
+            { id: 'bil',   title: 'БИЛ',           description: 'Bilim Innovation Lyceum'           },
+            { id: 'ent',   title: 'ЕНТ',           description: 'Единое национальное тестирование'  },
+            { id: 'combo', title: 'НИШ+РФМШ+КТЛ', description: 'Подготовка к трём школам сразу'    }
           ]
         }]
       }
@@ -250,8 +243,8 @@ app.post('/webhook', async (req, res) => {
           `🎁 Первый урок — *бесплатно*\n` +
           `🎁 Диагностика знаний от эксперта — *в подарок*\n\n` +
           `─────────────────\n` +
-          `📍 Алматы, А. Бокейхана 15\n` +
-          `📞 +7 (707) 900-30-11\n` +
+          `📍 Астана, Первая линия, офис «Каhармандар»\n` +
+          `🗺 https://2gis.kz/astana/geo/70000001102430714\n` +
           `🕐 Пн–Сб · 09:00–20:00`
         );
 
