@@ -226,17 +226,20 @@ async function sendGoalList(to, gradeLabel) {
   });
 }
 
-// ─── Карточка программы с кнопкой ────────────────────────────────────────────
+// ─── Карточка программы + отдельная кнопка ───────────────────────────────────
 async function sendProgram(to, goalId, gradeLabel) {
+  // Шаг 1: текст программы (без лимита)
   const text = PROGRAM_TEXT[goalId] || PROGRAM_TEXT['nil'];
+  await sendText(to, `🎯 *Программа для ${gradeLabel}*\n\n${text}`);
+
+  // Шаг 2: кнопка записи (отдельное сообщение — лимит 1024 символа обходится)
   await waPost({
     messaging_product: 'whatsapp', to,
     type: 'interactive',
     interactive: {
       type: 'button',
-      header: { type: 'text', text: `🎯 Программа для ${gradeLabel}` },
-      body:   { text },
-      footer: { text: 'Первый урок — бесплатно' },
+      body:   { text: '👇 Нажмите, чтобы записаться на *бесплатный пробный урок*' },
+      footer: { text: 'Первый урок и диагностика — бесплатно' },
       action: {
         buttons: [{
           type: 'reply',
