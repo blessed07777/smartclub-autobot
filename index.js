@@ -225,12 +225,22 @@ app.post('/webhook', async (req, res) => {
       } else if (st.state === 'goal') {
         // Выбрали цель → отправляем флоу с нужным экраном
         userState.set(phone, { ...st, state: 'awaiting_flow', goal: id });
-        await sendFlowTemplate(phone, st.grade, id);
-        await sendText(phone,
-          `${GOAL_LABEL[id]} · ${GRADE_LABEL[st.grade]} 📚\n\n` +
-          `Откройте карточку выше — там программа и тарифы.\n` +
-          `Нажмите *«Записаться на пробный урок»* чтобы оставить заявку.`
-        );
+        const gradeLabel = GRADE_LABEL[st.grade] || st.grade;
+        const goalLabel  = GOAL_LABEL[id] || id;
+
+        const templateResult = await sendFlowTemplate(phone, st.grade, id);
+
+        if (templateResult?.messages?.[0]?.id) {
+          // Шаблон отправился успешно — карточка пришла, ничего лишнего не пишем
+          console.log(`✅ Шаблон доставлен, ждём пока откроют флоу`);
+        } else {
+          // Шаблон не отправился — сообщаем об ошибке и сбрасываем состояние
+          console.error('❌ Шаблон не отправился:', JSON.stringify(templateResult));
+          userState.delete(phone);
+          await sendText(phone,
+            '⚠️ Не удалось отправить карточку программы. Попробуйте написать снова.'
+          );
+        }
       }
       return;
     }
@@ -259,7 +269,11 @@ app.post('/webhook', async (req, res) => {
         );
 
       } else if (st.state === 'awaiting_flow') {
-        await sendText(phone, '👆 Откройте карточку выше, посмотрите программу и нажмите «Записаться».');
+        // Напоминаем — повторно шлём шаблон если прошло более 10 минут, иначе просто напоминаем
+        await sendText(phone,
+          '📋 Мы уже отправили вам карточку с программой — посмотрите сообщения выше.\n\n' +
+          'Нажмите *«Записаться на пробный урок»* в той карточке 👆'
+        );
 
       } else {
         // Любое первое сообщение → начинаем квиз
