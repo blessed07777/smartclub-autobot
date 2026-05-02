@@ -139,14 +139,8 @@ async function sendFlowTemplate(phone, gradeId, goalId) {
         parameters: [{
           type: 'action',
           action: {
-            flow_token: flowToken,
-            // Передаём grade+goal на flow-сервер — он откроет правильный экран
-            flow_action_payload: {
-              data: {
-                client_grade: gradeId,
-                client_goal:  goalId
-              }
-            }
+            flow_token: flowToken
+            // flow_token = "phone|grade|goal" — flow-сервер парсит его для маршрутизации
           }
         }]
       }]
