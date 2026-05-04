@@ -10,8 +10,27 @@ const TEMPLATE_NAME  = process.env.TEMPLATE_NAME || 'smartclub_quiz';
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID || '';
 const GOOGLE_CREDS   = process.env.GOOGLE_CREDENTIALS || '';
 
-const GRADE_LABEL = { g3: '3–4 класс', g5: '5–6 класс', g7: '7–9 класс', g10: '10–11 класс' };
-const GOAL_LABEL  = { nil: 'НИШ', rfmsh: 'РФМШ', bil: 'БИЛ', ent: 'ЕНТ', combo: 'НИШ + РФМШ + КТЛ' };
+// ─── Справочники ──────────────────────────────────────────────────────────────
+const GRADE_LABEL = {
+  g3:  '3–4 класс',
+  g5:  '5–6 класс',
+  g7:  '7–8 класс',
+  g9:  '9 класс',
+  g10: '10–11 класс'
+};
+
+const GOAL_LABEL = {
+  nil:      'НИШ',
+  rfmsh:    'РФМШ',
+  bil:      'БИЛ',
+  combo:    'НИШ + РФМШ + КТЛ',
+  ent:      'ЕНТ',
+  basics:   'Основные предметы',
+  govexam:  'Гос. экзамены (9 класс)',
+  ent_tech: 'ЕНТ — Техническое',
+  ent_bio:  'ЕНТ — Биологическое',
+  primary:  'Начальная школа'
+};
 
 const userState = new Map();
 
@@ -59,48 +78,79 @@ async function sendGradeList(to) {
     type: 'interactive',
     interactive: {
       type: 'list',
-      header: { type: 'text', text: '📚 Шаг 1 из 2' },
+      header: { type: 'text', text: '📚 Шаг 1 из 2 — Класс' },
       body:   { text: 'В каком классе учится ваш ребёнок?' },
-      footer: { text: 'SmartClub · Астана' },
+      footer: { text: 'SmartClub · Астана · рус / каз' },
       action: {
         button: 'Выбрать класс',
-        sections: [{ title: 'Класс', rows: [
-          { id: 'g3',  title: '3–4 класс',   description: 'Начало подготовки'      },
-          { id: 'g5',  title: '5–6 класс',   description: 'Углублённая программа'  },
-          { id: 'g7',  title: '7–9 класс',   description: 'Интенсивная подготовка' },
-          { id: 'g10', title: '10–11 класс', description: 'Финальный этап'          }
+        sections: [{ title: 'Класс ребёнка', rows: [
+          { id: 'g3',  title: '3–4 класс',   description: 'Начальная школа — основы и логика' },
+          { id: 'g5',  title: '5–6 класс',   description: 'Подготовка к НИШ, РФМШ, БИЛ'      },
+          { id: 'g7',  title: '7–8 класс',   description: 'РФМШ, ЕНТ, основные предметы'     },
+          { id: 'g9',  title: '9 класс',     description: 'ЕНТ, РФМШ, гос. экзамены'          },
+          { id: 'g10', title: '10–11 класс', description: 'ЕНТ — техническое или биол.'       }
         ]}]
       }
     }
   });
 }
 
-// ─── Список целей ─────────────────────────────────────────────────────────────
-async function sendGoalList(to, gradeLabel) {
+// ─── Список целей (зависит от класса) ────────────────────────────────────────
+async function sendGoalList(to, gradeId, gradeLabel) {
+  let rows;
+
+  if (gradeId === 'g3') {
+    rows = [
+      { id: 'primary', title: 'Школьная программа', description: 'Математика, логика, английский, русский' }
+    ];
+  } else if (gradeId === 'g5') {
+    rows = [
+      { id: 'nil',   title: 'НИШ',           description: 'Назарбаев Интеллектуальные Школы' },
+      { id: 'rfmsh', title: 'РФМШ',          description: 'Республиканская физмат школа'      },
+      { id: 'bil',   title: 'БИЛ',           description: 'Bilim Innovation Lyceum'           },
+      { id: 'combo', title: 'НИШ + РФМШ + КТЛ', description: 'Три школы — максимальные шансы' }
+    ];
+  } else if (gradeId === 'g7') {
+    rows = [
+      { id: 'rfmsh',  title: 'РФМШ',                   description: 'Математика, логика, олимпиадные' },
+      { id: 'ent',    title: 'ЕНТ',                    description: 'Ранняя подготовка к тестированию' },
+      { id: 'basics', title: 'Основные предметы', description: 'Алгебра, геометрия, физика, языки'    }
+    ];
+  } else if (gradeId === 'g9') {
+    rows = [
+      { id: 'rfmsh',   title: 'РФМШ',                   description: 'Математика, логика, олимпиадные'   },
+      { id: 'ent',     title: 'ЕНТ',                    description: 'Подготовка к единому тестированию' },
+      { id: 'basics',  title: 'Основные предметы', description: 'Алгебра, геометрия, физика, языки'     },
+      { id: 'govexam', title: 'Гос. экзамены',          description: 'Аттестация 9 класс: алгебра, геом.' }
+    ];
+  } else if (gradeId === 'g10') {
+    rows = [
+      { id: 'ent_tech', title: 'ЕНТ — Техническое',    description: 'Математика, физика, информатика'  },
+      { id: 'ent_bio',  title: 'ЕНТ — Биологическое',  description: 'Биология, химия, география'        }
+    ];
+  } else {
+    rows = [
+      { id: 'nil', title: 'НИШ', description: 'Назарбаев Интеллектуальные Школы' }
+    ];
+  }
+
   await waPost({
     messaging_product: 'whatsapp', to,
     type: 'interactive',
     interactive: {
       type: 'list',
       header: { type: 'text', text: `📚 Шаг 2 из 2 · ${gradeLabel}` },
-      body:   { text: 'Отлично! Выберите цель поступления:' },
-      footer: { text: 'SmartClub · Астана' },
+      body:   { text: 'Отлично! Выберите цель подготовки:' },
+      footer: { text: 'SmartClub · рус / каз направление' },
       action: {
         button: 'Выбрать цель',
-        sections: [{ title: 'Цель', rows: [
-          { id: 'nil',   title: 'НИШ',           description: 'Назарбаев Интеллектуальные Школы' },
-          { id: 'rfmsh', title: 'РФМШ',          description: 'Республиканская физмат школа'      },
-          { id: 'bil',   title: 'БИЛ',           description: 'Bilim Innovation Lyceum'           },
-          { id: 'ent',   title: 'ЕНТ',           description: 'Единое национальное тестирование'  },
-          { id: 'combo', title: 'НИШ+РФМШ+КТЛ', description: 'Подготовка к трём школам сразу'    }
-        ]}]
+        sections: [{ title: 'Цель подготовки', rows }]
       }
     }
   });
 }
 
 // ─── Шаблон с флоу ───────────────────────────────────────────────────────────
-// flow_token = "phone|grade|goal" — флоу-сервер читает grade/goal из токена
 async function sendFlowTemplate(to, gradeId, goalId) {
   const flowToken = `${to}|${gradeId}|${goalId}`;
   const result = await waPost({
@@ -141,11 +191,11 @@ app.post('/webhook', async (req, res) => {
 
     // ── nfm_reply: пользователь нажал «Записаться» во флоу ───────────────────
     if (msg.type === 'interactive' && msg.interactive?.type === 'nfm_reply') {
-      const token  = msg.interactive.nfm_reply?.flow_token || '';
-      const parts  = token.split('|');
-      const grade  = parts[1] || st.grade || '';
-      const goal   = parts[2] || st.goal  || '';
-      const now    = new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Almaty' });
+      const token = msg.interactive.nfm_reply?.flow_token || '';
+      const parts = token.split('|');
+      const grade = parts[1] || st.grade || '';
+      const goal  = parts[2] || st.goal  || '';
+      const now   = new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Almaty' });
 
       userState.set(phone, { ...st, state: 'name', grade, goal, now });
 
@@ -164,7 +214,7 @@ app.post('/webhook', async (req, res) => {
 
       if (st.state === 'grade') {
         userState.set(phone, { ...st, state: 'goal', grade: id });
-        await sendGoalList(phone, GRADE_LABEL[id] || title);
+        await sendGoalList(phone, id, GRADE_LABEL[id] || title);
 
       } else if (st.state === 'goal') {
         userState.set(phone, { ...st, state: 'awaiting_flow', goal: id });
@@ -177,16 +227,14 @@ app.post('/webhook', async (req, res) => {
         }
 
       } else if (st.state === 'awaiting_flow') {
-        await sendText(phone, `⬆️ Карточка с программой уже отправлена выше.\n\nОткройте её и нажмите *«Записаться на пробный урок»* 👆`);
+        await sendText(phone,
+          `⬆️ Карточка с программой уже отправлена выше.\n\n` +
+          `Откройте её и нажмите *«Записаться на пробный урок»* 👆`
+        );
 
       } else {
         userState.set(phone, { state: 'grade' });
-        await sendText(phone,
-          `👋 Добро пожаловать в *SmartClub*!\n\n` +
-          `*Каждый второй наш ученик поступает в НИШ, РФМШ или БИЛ* 🏆\n\n` +
-          `Подберём программу для вашего ребёнка — 30 секунд 👇`
-        );
-        await sendGradeList(phone);
+        await sendWelcome(phone);
       }
       return;
     }
@@ -213,27 +261,30 @@ app.post('/webhook', async (req, res) => {
         );
 
         await sendText(phone,
-          `🎁 *Что вас ждёт:*\n\n` +
-          `• Пробный урок — *бесплатно*\n` +
-          `• Диагностика знаний от эксперта — *бесплатно*\n` +
-          `• Личный план подготовки с прогнозом результата\n\n` +
-          `📍 Астана, Первая линия, офис «Каhармандар»\n` +
-          `🗺 https://2gis.kz/astana/geo/70000001102430714\n` +
-          `🕐 Пн–Сб · 09:00–20:00`
+          `🎁 *Что вас ждёт на первом визите:*\n\n` +
+          `📝 Пробный урок — *бесплатно*\n` +
+          `🔍 Диагностика знаний от эксперта — *бесплатно*\n` +
+          `📊 Личный план подготовки с прогнозом результата\n` +
+          `👨‍🏫 Знакомство с преподавателем и группой\n\n` +
+          `Всё это без обязательств — приходите и убедитесь сами 💪`
+        );
+
+        await sendText(phone,
+          `📍 *Как нас найти:*\n\n` +
+          `Астана, Первая линия, *SmartClub*\n` +
+          `🗺 https://2gis.kz/astana/geo/70000001102430714\n\n` +
+          `🕐 Пн–Сб · 09:00–20:00\n\n` +
+          `Ждём вас! 🌟`
         );
 
       } else if (st.state === 'awaiting_flow') {
-        await sendText(phone, `⬆️ Карточка с программой уже отправлена выше.\n\nОткройте её и нажмите *«Записаться на пробный урок»* 👆`);
+        await sendText(phone,
+          `⬆️ Карточка с программой уже отправлена выше.\n\n` +
+          `Откройте её и нажмите *«Записаться на пробный урок»* 👆`
+        );
 
       } else {
-        userState.set(phone, { state: 'grade' });
-        await sendText(phone,
-          `👋 Добро пожаловать в *SmartClub*!\n\n` +
-          `Пока другие школы обещают — мы гарантируем результат:\n` +
-          `*каждый второй наш ученик поступает в НИШ, РФМШ или БИЛ* 🏆\n\n` +
-          `Подберём программу для вашего ребёнка — это займёт 30 секунд 👇`
-        );
-        await sendGradeList(phone);
+        await sendWelcome(phone);
       }
     }
 
@@ -241,6 +292,19 @@ app.post('/webhook', async (req, res) => {
     console.error('❌ Webhook error:', err.message);
   }
 });
+
+// ─── Приветствие ─────────────────────────────────────────────────────────────
+async function sendWelcome(phone) {
+  userState.set(phone, { state: 'grade' });
+  await sendText(phone,
+    `👋 Добро пожаловать в *SmartClub*!\n\n` +
+    `🏆 Каждый второй ученик поступает в *НИШ, РФМШ или БИЛ*\n` +
+    `🎓 *90–100% выпускников получают грант в вуз*\n\n` +
+    `Занятия ведутся на *русском и казахском* языке — подберём программу в любом направлении.\n\n` +
+    `Всего 2 вопроса — и вы получите персональную программу для вашего ребёнка 👇`
+  );
+  await sendGradeList(phone);
+}
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
