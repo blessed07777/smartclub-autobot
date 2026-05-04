@@ -150,22 +150,31 @@ async function sendGoalList(to, gradeId, gradeLabel) {
   });
 }
 
-// ─── Шаблон с флоу ───────────────────────────────────────────────────────────
+// ─── Интерактивное сообщение с флоу (не требует шаблона) ─────────────────────
 async function sendFlowTemplate(to, gradeId, goalId) {
   const flowToken = `${to}|${gradeId}|${goalId}`;
+  const FLOW_ID   = process.env.FLOW_ID || '806320295577232';
   const result = await waPost({
     messaging_product: 'whatsapp', to,
-    type: 'template',
-    template: {
-      name: TEMPLATE_NAME,
-      language: { code: 'en' },
-      components: [{
-        type: 'button', sub_type: 'flow', index: '0',
-        parameters: [{ type: 'action', action: { flow_token: flowToken } }]
-      }]
+    type: 'interactive',
+    interactive: {
+      type: 'flow',
+      header: { type: 'text', text: '🎯 SmartClub — ваша программа' },
+      body:   { text: 'Мы подобрали программу специально для вашего ребёнка. Нажмите кнопку ниже, чтобы открыть её.' },
+      footer: { text: 'SmartClub · Астана' },
+      action: {
+        name: 'flow',
+        parameters: {
+          flow_message_version: '3',
+          flow_token: flowToken,
+          flow_id: FLOW_ID,
+          flow_cta: 'Открыть программу →',
+          flow_action: 'data_exchange'
+        }
+      }
     }
   });
-  console.log(`📨 flow template → ${to} | token=${flowToken}`);
+  console.log(`📨 flow interactive → ${to} | token=${flowToken}`);
   console.log(`📬 WA response:`, JSON.stringify(result));
   return result;
 }
