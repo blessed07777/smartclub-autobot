@@ -8,7 +8,6 @@ const PHONE_ID       = process.env.PHONE_NUMBER_ID;
 const VERIFY_TOKEN   = process.env.VERIFY_TOKEN    || 'smartclub2024';
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID || '';
 const GOOGLE_CREDS   = process.env.GOOGLE_CREDENTIALS || '';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD  || 'smartclub2024';
 const FLOW_ID        = process.env.FLOW_ID         || '806320295577232';
 
 // ─── Справочники ──────────────────────────────────────────────────────────────
@@ -36,13 +35,13 @@ const GOAL_LABEL = {
 // ─── Хранилище состояния ──────────────────────────────────────────────────────
 const userState = new Map();
 
-// ─── Хранилище чатов для PWA-панели ──────────────────────────────────────────
-// { phone → { messages: [], unread: 0, botActive: true, lastMsg: '', lastTime: '' } }
+// ─── Хранилище чатов ──────────────────────────────────────────────────────────
+// phone → { messages:[], unread:0, botActive:true, lastMsg:'', lastTime:'', grade:'', goal:'', name:'' }
 const chats = new Map();
 
 function getChat(phone) {
   if (!chats.has(phone)) {
-    chats.set(phone, { messages: [], unread: 0, botActive: true, lastMsg: '', lastTime: '' });
+    chats.set(phone, { messages: [], unread: 0, botActive: true, lastMsg: '', lastTime: '', grade: '', goal: '', name: '', registeredAt: null });
   }
   return chats.get(phone);
 }
@@ -51,13 +50,13 @@ function storeMsg(phone, dir, text) {
   const chat = getChat(phone);
   const time  = new Date().toISOString();
   chat.messages.push({ dir, text, time });
-  chat.lastMsg  = text.slice(0, 60);
+  chat.lastMsg  = text.slice(0, 80);
   chat.lastTime = time;
   if (dir === 'in') chat.unread++;
   sseNotify({ type: 'message', phone, dir, text, time });
 }
 
-// ─── SSE (Server-Sent Events) ─────────────────────────────────────────────────
+// ─── SSE ──────────────────────────────────────────────────────────────────────
 const sseClients = new Set();
 
 function sseNotify(data) {
@@ -107,8 +106,7 @@ async function sendText(to, text) {
 
 // ─── Список классов ───────────────────────────────────────────────────────────
 async function sendGradeList(to) {
-  const text = '📚 Шаг 1 из 2 — Класс\nВ каком классе учится ваш ребёнок?';
-  storeMsg(to, 'out', text);
+  storeMsg(to, 'out', '📚 Шаг 1 из 2 — В каком классе учится ваш ребёнок?');
   await waPost({
     messaging_product: 'whatsapp', to,
     type: 'interactive',
@@ -138,23 +136,23 @@ async function sendGoalList(to, gradeId, gradeLabel) {
     rows = [{ id: 'primary', title: 'Школьная программа', description: 'Математика, логика, английский, русский' }];
   } else if (gradeId === 'g5') {
     rows = [
-      { id: 'nil',   title: 'НИШ',              description: 'Назарбаев Интеллектуальные Школы'  },
-      { id: 'rfmsh', title: 'РФМШ',             description: 'Республиканская физмат школа'       },
-      { id: 'bil',   title: 'БИЛ',              description: 'Bilim Innovation Lyceum'            },
+      { id: 'nil',   title: 'НИШ',               description: 'Назарбаев Интеллектуальные Школы' },
+      { id: 'rfmsh', title: 'РФМШ',              description: 'Республиканская физмат школа'      },
+      { id: 'bil',   title: 'БИЛ',               description: 'Bilim Innovation Lyceum'           },
       { id: 'combo', title: 'НИШ + РФМШ + КТЛ', description: 'Три школы — максимальные шансы'   }
     ];
   } else if (gradeId === 'g7') {
     rows = [
-      { id: 'rfmsh',  title: 'РФМШ',             description: 'Математика, логика, олимпиадные'  },
-      { id: 'ent',    title: 'ЕНТ',              description: 'Ранняя подготовка к тестированию'  },
+      { id: 'rfmsh',  title: 'РФМШ',              description: 'Математика, логика, олимпиадные'   },
+      { id: 'ent',    title: 'ЕНТ',               description: 'Ранняя подготовка к тестированию'  },
       { id: 'basics', title: 'Основные предметы', description: 'Алгебра, геометрия, физика, языки' }
     ];
   } else if (gradeId === 'g9') {
     rows = [
-      { id: 'rfmsh',   title: 'РФМШ',             description: 'Математика, логика, олимпиадные'    },
-      { id: 'ent',     title: 'ЕНТ',              description: 'Подготовка к единому тестированию'  },
-      { id: 'basics',  title: 'Основные предметы', description: 'Алгебра, геометрия, физика, языки' },
-      { id: 'govexam', title: 'Гос. экзамены',    description: 'Аттестация 9 класс: алгебра, геом.' }
+      { id: 'rfmsh',   title: 'РФМШ',              description: 'Математика, логика, олимпиадные'    },
+      { id: 'ent',     title: 'ЕНТ',               description: 'Подготовка к единому тестированию'  },
+      { id: 'basics',  title: 'Основные предметы', description: 'Алгебра, геометрия, физика, языки'  },
+      { id: 'govexam', title: 'Гос. экзамены',     description: 'Аттестация 9 класс: алгебра, геом.' }
     ];
   } else if (gradeId === 'g10') {
     rows = [
@@ -165,8 +163,7 @@ async function sendGoalList(to, gradeId, gradeLabel) {
     rows = [{ id: 'nil', title: 'НИШ', description: 'Назарбаев Интеллектуальные Школы' }];
   }
 
-  const text = `📚 Шаг 2 из 2 · ${gradeLabel}\nВыберите цель подготовки`;
-  storeMsg(to, 'out', text);
+  storeMsg(to, 'out', `📚 Шаг 2 из 2 · ${gradeLabel} — Выберите цель подготовки`);
   await waPost({
     messaging_product: 'whatsapp', to,
     type: 'interactive',
@@ -183,8 +180,7 @@ async function sendGoalList(to, gradeId, gradeLabel) {
 // ─── Интерактивное сообщение с флоу ──────────────────────────────────────────
 async function sendFlowTemplate(to, gradeId, goalId) {
   const flowToken = `${to}|${gradeId}|${goalId}`;
-  const text = '🎯 SmartClub — ваша программа\nОткройте персональную программу';
-  storeMsg(to, 'out', text);
+  storeMsg(to, 'out', '🎯 SmartClub — ваша персональная программа [Флоу]');
   const result = await waPost({
     messaging_product: 'whatsapp', to,
     type: 'interactive',
@@ -205,7 +201,7 @@ async function sendFlowTemplate(to, gradeId, goalId) {
       }
     }
   });
-  console.log(`📨 flow interactive → ${to} | token=${flowToken}`);
+  console.log(`📨 flow → ${to} | token=${flowToken}`);
   return result;
 }
 
@@ -250,7 +246,7 @@ app.post('/webhook', async (req, res) => {
       const goal  = parts[2] || st.goal  || '';
       const now   = new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Almaty' });
 
-      storeMsg(phone, 'in', `[Записался на: ${GOAL_LABEL[goal] || goal} · ${GRADE_LABEL[grade] || grade}]`);
+      storeMsg(phone, 'in', `[Записался: ${GOAL_LABEL[goal] || goal} · ${GRADE_LABEL[grade] || grade}]`);
       userState.set(phone, { ...st, state: 'name', grade, goal, now });
 
       await sendText(phone,
@@ -270,7 +266,6 @@ app.post('/webhook', async (req, res) => {
       if (st.state === 'grade') {
         userState.set(phone, { ...st, state: 'goal', grade: id });
         await sendGoalList(phone, id, GRADE_LABEL[id] || title);
-
       } else if (st.state === 'goal') {
         userState.set(phone, { ...st, state: 'awaiting_flow', goal: id });
         const result = await sendFlowTemplate(phone, st.grade, id);
@@ -280,14 +275,9 @@ app.post('/webhook', async (req, res) => {
           await sendText(phone, '⚠️ Не удалось открыть карточку программы. Попробуйте ещё раз 👇');
           await sendGradeList(phone);
         }
-
       } else if (st.state === 'awaiting_flow') {
-        await sendText(phone,
-          `⬆️ Карточка с программой уже отправлена выше.\n\nОткройте её и нажмите *«Записаться на пробный урок»* 👆`
-        );
-
+        await sendText(phone, `⬆️ Карточка с программой уже отправлена выше.\n\nОткройте её и нажмите *«Записаться на пробный урок»* 👆`);
       } else {
-        userState.set(phone, { state: 'grade' });
         await sendWelcome(phone);
       }
       return;
@@ -298,9 +288,8 @@ app.post('/webhook', async (req, res) => {
       const text = (msg.text?.body || '').trim();
       storeMsg(phone, 'in', text);
 
-      // Если менеджер уже ведёт диалог — бот молчит
       if (!chat.botActive) {
-        console.log(`🤫 Бот выключен для ${phone}, менеджер ведёт диалог`);
+        console.log(`🤫 Бот выключен для ${phone}`);
         return;
       }
 
@@ -311,6 +300,12 @@ app.post('/webhook', async (req, res) => {
         const gradeLabel = GRADE_LABEL[grade] || grade || '—';
         const goalLabel  = GOAL_LABEL[goal]   || goal  || '—';
         const row = [now, text, phone, gradeLabel, goalLabel, 'Новая заявка'];
+
+        // Сохраняем в чат для аналитики
+        chat.name  = text;
+        chat.grade = gradeLabel;
+        chat.goal  = goalLabel;
+        chat.registeredAt = now;
 
         console.log(`✅ ЗАЯВКА: ${text} | ${phone} | ${gradeLabel} | ${goalLabel}`);
         await appendToSheet(row);
@@ -336,10 +331,7 @@ app.post('/webhook', async (req, res) => {
         );
 
       } else if (st.state === 'awaiting_flow') {
-        await sendText(phone,
-          `⬆️ Карточка с программой уже отправлена выше.\n\nОткройте её и нажмите *«Записаться на пробный урок»* 👆`
-        );
-
+        await sendText(phone, `⬆️ Карточка с программой уже отправлена выше.\n\nОткройте её и нажмите *«Записаться на пробный урок»* 👆`);
       } else {
         await sendWelcome(phone);
       }
@@ -354,60 +346,96 @@ app.post('/webhook', async (req, res) => {
 //  PWA ADMIN PANEL
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// ── Auth middleware ───────────────────────────────────────────────────────────
-function requireAuth(req, res, next) {
-  const pwd = req.headers['x-admin-password'] || req.query.p;
-  if (pwd === ADMIN_PASSWORD) return next();
-  res.status(401).json({ error: 'Unauthorized' });
-}
-
 // ── SSE endpoint ──────────────────────────────────────────────────────────────
-app.get('/admin/events', requireAuth, (req, res) => {
+app.get('/admin/events', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
   sseClients.add(res);
-  const heartbeat = setInterval(() => {
-    try { res.write(': ping\n\n'); } catch (_) { clearInterval(heartbeat); sseClients.delete(res); }
+  const hb = setInterval(() => {
+    try { res.write(': ping\n\n'); } catch (_) { clearInterval(hb); sseClients.delete(res); }
   }, 25000);
-  req.on('close', () => { clearInterval(heartbeat); sseClients.delete(res); });
+  req.on('close', () => { clearInterval(hb); sseClients.delete(res); });
 });
 
 // ── Admin API ─────────────────────────────────────────────────────────────────
-app.get('/admin/api/chats', requireAuth, (_req, res) => {
+app.get('/admin/api/chats', (_req, res) => {
   const list = [];
   for (const [phone, c] of chats) {
-    list.push({ phone, unread: c.unread, botActive: c.botActive, lastMsg: c.lastMsg, lastTime: c.lastTime });
+    list.push({
+      phone, unread: c.unread, botActive: c.botActive,
+      lastMsg: c.lastMsg, lastTime: c.lastTime,
+      name: c.name, grade: c.grade, goal: c.goal, registeredAt: c.registeredAt,
+      msgCount: c.messages.length
+    });
   }
   list.sort((a, b) => (b.lastTime || '').localeCompare(a.lastTime || ''));
   res.json(list);
 });
 
-app.get('/admin/api/chat/:phone', requireAuth, (req, res) => {
+app.get('/admin/api/chat/:phone', (req, res) => {
   const c = chats.get(req.params.phone);
   if (!c) return res.json({ messages: [], botActive: true });
   c.unread = 0;
-  res.json({ messages: c.messages, botActive: c.botActive });
+  sseNotify({ type: 'read', phone: req.params.phone });
+  res.json({ messages: c.messages, botActive: c.botActive, name: c.name, grade: c.grade, goal: c.goal });
 });
 
-app.post('/admin/api/send', requireAuth, async (req, res) => {
+app.post('/admin/api/send', async (req, res) => {
   const { phone, text } = req.body;
   if (!phone || !text) return res.status(400).json({ error: 'phone & text required' });
   const chat = getChat(phone);
-  chat.botActive = false; // менеджер взял чат
+  chat.botActive = false;
   await sendText(phone, text);
   res.json({ ok: true });
 });
 
-app.post('/admin/api/toggle-bot', requireAuth, (req, res) => {
+app.post('/admin/api/toggle-bot', (req, res) => {
   const { phone } = req.body;
   if (!phone) return res.status(400).json({ error: 'phone required' });
   const chat = getChat(phone);
   chat.botActive = !chat.botActive;
-  if (chat.botActive) userState.delete(phone); // сбросить состояние чтобы бот начал заново
+  if (chat.botActive) userState.delete(phone);
   sseNotify({ type: 'bot_toggle', phone, botActive: chat.botActive });
   res.json({ botActive: chat.botActive });
+});
+
+app.get('/admin/api/stats', (_req, res) => {
+  const all = [...chats.values()];
+  const registered = all.filter(c => c.registeredAt);
+  const today = new Date().toDateString();
+  const todayReg = registered.filter(c => new Date(c.registeredAt).toDateString() === today);
+
+  // по целям
+  const byGoal = {};
+  registered.forEach(c => {
+    const g = c.goal || 'Не указана';
+    byGoal[g] = (byGoal[g] || 0) + 1;
+  });
+
+  // по классам
+  const byGrade = {};
+  registered.forEach(c => {
+    const g = c.grade || 'Не указан';
+    byGrade[g] = (byGrade[g] || 0) + 1;
+  });
+
+  // активность по часам (за последние 7 дней)
+  const byHour = new Array(24).fill(0);
+  all.forEach(c => c.messages.forEach(m => {
+    if (m.dir === 'in') byHour[new Date(m.time).getHours()]++;
+  }));
+
+  res.json({
+    totalChats: chats.size,
+    totalRegistered: registered.length,
+    todayRegistered: todayReg.length,
+    activeBot: all.filter(c => c.botActive).length,
+    byGoal,
+    byGrade,
+    byHour
+  });
 });
 
 // ── manifest.json ─────────────────────────────────────────────────────────────
@@ -419,9 +447,10 @@ app.get('/manifest.json', (_req, res) => {
     display: 'standalone',
     background_color: '#111b21',
     theme_color: '#111b21',
-    icons: [
-      { src: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%2325d366"/><text y=".9em" font-size="80" x="10">💬</text></svg>', sizes: '192x192', type: 'image/svg+xml' }
-    ]
+    icons: [{
+      src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%2325d366'/%3E%3Ctext y='.9em' font-size='80' x='10'%3E%F0%9F%92%AC%3C/text%3E%3C/svg%3E",
+      sizes: '192x192', type: 'image/svg+xml'
+    }]
   });
 });
 
@@ -431,22 +460,22 @@ app.get('/sw.js', (_req, res) => {
   res.send(`
 self.addEventListener('push', e => {
   const d = e.data ? e.data.json() : {};
-  self.registration.showNotification(d.title || 'SmartClub', {
-    body: d.body || '',
-    icon: '/favicon.ico',
-    badge: '/favicon.ico'
-  });
+  self.registration.showNotification(d.title || 'SmartClub', { body: d.body || '' });
 });
 self.addEventListener('notificationclick', e => { e.notification.close(); });
 `);
 });
 
 // ── Главная страница PWA ──────────────────────────────────────────────────────
+const SHEETS_URL = SPREADSHEET_ID
+  ? `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/edit?usp=sharing&rm=minimal`
+  : '';
+
 const ADMIN_HTML = `<!DOCTYPE html>
 <html lang="ru">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
 <meta name="theme-color" content="#111b21"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
@@ -454,184 +483,246 @@ const ADMIN_HTML = `<!DOCTYPE html>
 <link rel="manifest" href="/manifest.json"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#111b21;color:#e9edef;height:100dvh;overflow:hidden;}
-#app{display:flex;height:100dvh;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#111b21;color:#e9edef;height:100dvh;overflow:hidden;display:flex;flex-direction:column;}
 
-/* ── Sidebar ── */
-#sidebar{width:100%;max-width:380px;border-right:1px solid #222d34;display:flex;flex-direction:column;flex-shrink:0;}
-#sidebar-header{background:#202c33;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;min-height:60px;}
-#sidebar-header h1{font-size:20px;font-weight:600;color:#e9edef;}
-.header-btn{background:none;border:none;color:#aebac1;cursor:pointer;padding:8px;border-radius:50%;font-size:20px;transition:background .2s;}
-.header-btn:hover{background:#2a3942;}
-#search-box{padding:8px 12px;background:#111b21;}
-#search-input{width:100%;background:#202c33;border:none;border-radius:8px;padding:9px 14px;color:#e9edef;font-size:15px;outline:none;}
+/* ── Tab bar ── */
+#tabbar{display:flex;background:#202c33;border-top:1px solid #2a3942;flex-shrink:0;order:2;}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px 4px 12px;cursor:pointer;color:#8696a0;font-size:11px;gap:3px;transition:color .2s;border:none;background:none;}
+.tab .tab-icon{font-size:22px;line-height:1;}
+.tab.active{color:#00a884;}
+.tab.active .tab-icon{filter:drop-shadow(0 0 4px #00a884);}
+
+/* ── Screens ── */
+#screens{flex:1;overflow:hidden;order:1;display:flex;flex-direction:column;}
+.screen{display:none;flex:1;flex-direction:column;overflow:hidden;}
+.screen.active{display:flex;}
+
+/* ══ CHATS SCREEN ══ */
+#s-chats{flex-direction:row;}
+
+/* Sidebar */
+#sidebar{width:100%;max-width:360px;border-right:1px solid #222d34;display:flex;flex-direction:column;flex-shrink:0;background:#111b21;}
+#sidebar-header{background:#202c33;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;min-height:58px;}
+#sidebar-header h1{font-size:18px;font-weight:600;color:#e9edef;}
+.icon-btn{background:none;border:none;color:#aebac1;cursor:pointer;width:36px;height:36px;border-radius:50%;font-size:18px;display:flex;align-items:center;justify-content:center;transition:background .2s;}
+.icon-btn:hover{background:#2a3942;}
+#search-wrap{padding:8px 12px;background:#111b21;}
+#search-input{width:100%;background:#202c33;border:none;border-radius:8px;padding:9px 14px;color:#e9edef;font-size:14px;outline:none;}
 #search-input::placeholder{color:#8696a0;}
-#chat-list{flex:1;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#374045 transparent;}
-.chat-item{display:flex;align-items:center;padding:12px 16px;cursor:pointer;border-bottom:1px solid #1c2830;gap:12px;transition:background .15s;}
-.chat-item:hover,.chat-item.active{background:#2a3942;}
-.avatar{width:48px;height:48px;border-radius:50%;background:#00a884;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;}
-.chat-info{flex:1;min-width:0;}
-.chat-name{font-size:16px;font-weight:500;color:#e9edef;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.chat-preview{font-size:13px;color:#8696a0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;}
-.chat-meta{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;}
-.chat-time{font-size:12px;color:#8696a0;}
-.unread-badge{background:#00a884;color:#111b21;font-size:12px;font-weight:600;min-width:20px;height:20px;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:0 5px;}
+#chat-list{flex:1;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#2a3942 transparent;}
+.ci{display:flex;align-items:center;padding:12px 16px;cursor:pointer;border-bottom:1px solid #1c2830;gap:11px;transition:background .15s;}
+.ci:hover,.ci.active{background:#2a3942;}
+.av{width:46px;height:46px;border-radius:50%;background:#00a884;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;color:#111b21;font-weight:700;}
+.ci-info{flex:1;min-width:0;}
+.ci-name{font-size:15px;font-weight:500;color:#e9edef;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ci-prev{font-size:13px;color:#8696a0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;}
+.ci-meta{display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0;}
+.ci-time{font-size:11px;color:#8696a0;}
+.badge{background:#00a884;color:#111b21;font-size:11px;font-weight:700;min-width:18px;height:18px;border-radius:9px;display:flex;align-items:center;justify-content:center;padding:0 4px;}
 .bot-dot{width:8px;height:8px;border-radius:50%;background:#00a884;}
-.bot-dot.off{background:#8696a0;}
-.empty-list{text-align:center;padding:40px 20px;color:#8696a0;font-size:14px;}
+.bot-dot.off{background:#555;}
+.empty{text-align:center;padding:48px 20px;color:#8696a0;font-size:14px;}
 
-/* ── Conversation ── */
-#conversation{flex:1;display:flex;flex-direction:column;background:#0b141a;position:relative;}
-#conv-header{background:#202c33;padding:12px 16px;display:flex;align-items:center;gap:12px;min-height:60px;}
-#back-btn{background:none;border:none;color:#aebac1;cursor:pointer;font-size:22px;padding:4px;display:none;}
-#conv-avatar{width:40px;height:40px;border-radius:50%;background:#00a884;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;}
-#conv-info{flex:1;}
-#conv-name{font-size:16px;font-weight:600;color:#e9edef;}
-#conv-status{font-size:13px;color:#8696a0;}
-#bot-toggle{background:#00a884;border:none;color:#111b21;font-size:13px;font-weight:600;padding:6px 14px;border-radius:20px;cursor:pointer;transition:background .2s;white-space:nowrap;}
-#bot-toggle.off{background:#374045;color:#aebac1;}
-#messages{flex:1;overflow-y:auto;padding:16px;scrollbar-width:thin;scrollbar-color:#374045 transparent;display:flex;flex-direction:column;gap:4px;}
-.msg{max-width:70%;padding:8px 12px;border-radius:8px;font-size:15px;line-height:1.4;word-wrap:break-word;position:relative;}
-.msg.in{background:#202c33;border-bottom-left-radius:2px;align-self:flex-start;}
-.msg.out{background:#005c4b;border-bottom-right-radius:2px;align-self:flex-end;}
-.msg-time{font-size:11px;color:#8696a0;display:block;margin-top:4px;text-align:right;}
-.msg-system{text-align:center;color:#8696a0;font-size:12px;background:#182229;padding:4px 12px;border-radius:8px;align-self:center;max-width:80%;}
-#input-bar{background:#202c33;padding:10px 16px;display:flex;align-items:flex-end;gap:10px;}
-#msg-input{flex:1;background:#2a3942;border:none;border-radius:10px;padding:10px 14px;color:#e9edef;font-size:15px;outline:none;resize:none;max-height:120px;min-height:44px;font-family:inherit;line-height:1.4;}
-#msg-input::placeholder{color:#8696a0;}
-#send-btn{width:46px;height:46px;border-radius:50%;background:#00a884;border:none;cursor:pointer;color:#111b21;font-size:22px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .2s;}
+/* Conversation */
+#conv{flex:1;display:flex;flex-direction:column;background:#0b141a;}
+#conv-header{background:#202c33;padding:10px 14px;display:flex;align-items:center;gap:10px;min-height:58px;flex-shrink:0;}
+#back-btn{background:none;border:none;color:#aebac1;font-size:22px;cursor:pointer;padding:4px 8px;display:none;line-height:1;}
+#conv-av{width:40px;height:40px;border-radius:50%;background:#00a884;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;color:#111b21;font-weight:700;}
+#conv-info{flex:1;min-width:0;}
+#conv-name{font-size:15px;font-weight:600;color:#e9edef;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+#conv-sub{font-size:12px;color:#8696a0;}
+#bot-btn{border:none;font-size:13px;font-weight:600;padding:5px 13px;border-radius:20px;cursor:pointer;white-space:nowrap;transition:all .2s;}
+#bot-btn.on{background:#00a884;color:#111b21;}
+#bot-btn.off{background:#2a3942;color:#aebac1;}
+#messages{flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:3px;scrollbar-width:thin;scrollbar-color:#2a3942 transparent;}
+.m{max-width:72%;padding:8px 12px;border-radius:8px;font-size:14px;line-height:1.45;word-wrap:break-word;}
+.m.in{background:#202c33;border-bottom-left-radius:2px;align-self:flex-start;}
+.m.out{background:#005c4b;border-bottom-right-radius:2px;align-self:flex-end;}
+.m-t{font-size:10px;color:#8696a0;display:block;margin-top:3px;text-align:right;}
+.m-sys{text-align:center;color:#8696a0;font-size:11px;background:#182229;padding:3px 10px;border-radius:8px;align-self:center;}
+#input-bar{background:#202c33;padding:10px 12px;display:flex;align-items:flex-end;gap:8px;flex-shrink:0;}
+#msg-inp{flex:1;background:#2a3942;border:none;border-radius:10px;padding:10px 13px;color:#e9edef;font-size:15px;outline:none;resize:none;max-height:120px;min-height:42px;font-family:inherit;line-height:1.4;}
+#msg-inp::placeholder{color:#8696a0;}
+#send-btn{width:44px;height:44px;border-radius:50%;background:#00a884;border:none;cursor:pointer;color:#111b21;font-size:20px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .2s;}
 #send-btn:hover{background:#06d755;}
-#send-btn:disabled{background:#374045;cursor:not-allowed;}
-#placeholder{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;color:#8696a0;background:#0b141a;}
-#placeholder .icon{font-size:80px;opacity:.3;}
-#placeholder p{font-size:16px;}
+#no-chat{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:#8696a0;}
+#no-chat .big{font-size:72px;opacity:.25;}
 
-/* ── Login ── */
-#login-screen{position:fixed;inset:0;background:#111b21;display:flex;align-items:center;justify-content:center;z-index:100;}
-.login-card{background:#202c33;border-radius:16px;padding:32px;width:320px;text-align:center;}
-.login-card h2{font-size:22px;font-weight:600;color:#e9edef;margin-bottom:8px;}
-.login-card p{color:#8696a0;font-size:14px;margin-bottom:24px;}
-.login-card input{width:100%;background:#2a3942;border:none;border-radius:8px;padding:12px 16px;color:#e9edef;font-size:16px;outline:none;margin-bottom:12px;text-align:center;letter-spacing:4px;}
-.login-card button{width:100%;background:#00a884;border:none;border-radius:8px;padding:13px;color:#111b21;font-size:16px;font-weight:600;cursor:pointer;}
-.login-error{color:#ef476f;font-size:13px;margin-top:8px;}
+/* ══ ANALYTICS SCREEN ══ */
+#s-analytics{background:#0b141a;}
+#analytics-inner{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:14px;scrollbar-width:thin;scrollbar-color:#2a3942 transparent;}
+
+.a-header{background:#202c33;border-radius:12px;padding:16px;}
+.a-header h2{font-size:17px;font-weight:600;color:#e9edef;margin-bottom:12px;}
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.stat-card{background:#0b141a;border-radius:10px;padding:14px;text-align:center;}
+.stat-num{font-size:28px;font-weight:700;color:#00a884;}
+.stat-lbl{font-size:12px;color:#8696a0;margin-top:2px;}
+
+.a-section{background:#202c33;border-radius:12px;padding:16px;}
+.a-section h3{font-size:15px;font-weight:600;color:#e9edef;margin-bottom:12px;}
+
+.bar-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.bar-label{font-size:13px;color:#aebac1;width:130px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.bar-wrap{flex:1;background:#0b141a;border-radius:4px;height:20px;overflow:hidden;}
+.bar-fill{height:100%;background:#00a884;border-radius:4px;transition:width .4s ease;min-width:2px;}
+.bar-count{font-size:12px;color:#8696a0;width:28px;text-align:right;flex-shrink:0;}
+
+.chat-table{width:100%;border-collapse:collapse;}
+.chat-table th{font-size:12px;color:#8696a0;text-align:left;padding:6px 8px;border-bottom:1px solid #2a3942;white-space:nowrap;}
+.chat-table td{font-size:13px;color:#e9edef;padding:8px;border-bottom:1px solid #1c2830;vertical-align:top;}
+.chat-table tr:last-child td{border-bottom:none;}
+.tag{display:inline-block;background:#1c4a3a;color:#00a884;font-size:11px;padding:2px 7px;border-radius:10px;white-space:nowrap;}
+
+/* ══ SHEETS SCREEN ══ */
+#s-sheets{background:#111b21;}
+#sheets-frame{flex:1;border:none;width:100%;height:100%;}
+#sheets-empty{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:#8696a0;padding:32px;text-align:center;}
+#sheets-empty .big{font-size:56px;opacity:.3;}
 
 /* ── Mobile ── */
 @media(max-width:680px){
   #sidebar{max-width:100%;}
-  #conversation{position:fixed;inset:0;transform:translateX(100%);transition:transform .25s ease;z-index:10;}
-  #conversation.open{transform:translateX(0);}
+  #conv{position:fixed;inset:0;bottom:56px;transform:translateX(100%);transition:transform .25s ease;z-index:20;}
+  #conv.open{transform:translateX(0);}
   #back-btn{display:flex!important;}
+  #no-chat{display:none;}
 }
-
-/* Wallpaper pattern */
-#messages::before{content:'';position:fixed;inset:0;opacity:.04;pointer-events:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60'%3E%3Ctext y='30' font-size='24'%3E💬%3C/text%3E%3C/svg%3E");}
 </style>
 </head>
 <body>
 
-<div id="login-screen">
-  <div class="login-card">
-    <div style="font-size:48px;margin-bottom:16px">💬</div>
-    <h2>SmartClub Admin</h2>
-    <p>Введите пароль для входа</p>
-    <input type="password" id="pwd-input" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"/>
-    <button onclick="doLogin()">Войти</button>
-    <div class="login-error" id="login-error"></div>
+<div id="screens">
+
+  <!-- ══ CHATS ══ -->
+  <div id="s-chats" class="screen active">
+    <div id="sidebar">
+      <div id="sidebar-header">
+        <h1>💬 Чаты</h1>
+        <button class="icon-btn" onclick="loadChats()" title="Обновить">↻</button>
+      </div>
+      <div id="search-wrap">
+        <input id="search-input" type="search" placeholder="Поиск по номеру..." oninput="filterChats()"/>
+      </div>
+      <div id="chat-list"><div class="empty">Загрузка...</div></div>
+    </div>
+
+    <div id="no-chat">
+      <div class="big">💬</div>
+      <p>Выберите чат</p>
+    </div>
+
+    <div id="conv">
+      <div id="conv-header">
+        <button id="back-btn" onclick="closeConv()">←</button>
+        <div id="conv-av">👤</div>
+        <div id="conv-info">
+          <div id="conv-name">—</div>
+          <div id="conv-sub">—</div>
+        </div>
+        <button id="bot-btn" class="on" onclick="toggleBot()">🤖 Бот вкл</button>
+      </div>
+      <div id="messages"></div>
+      <div id="input-bar">
+        <textarea id="msg-inp" placeholder="Написать сообщение..." rows="1"
+          oninput="autoResize(this)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg()}"></textarea>
+        <button id="send-btn" onclick="sendMsg()">➤</button>
+      </div>
+    </div>
   </div>
+
+  <!-- ══ ANALYTICS ══ -->
+  <div id="s-analytics" class="screen">
+    <div id="analytics-inner">
+      <div class="a-header">
+        <h2>📊 Аналитика</h2>
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-num" id="st-total">—</div><div class="stat-lbl">Всего чатов</div></div>
+          <div class="stat-card"><div class="stat-num" id="st-reg">—</div><div class="stat-lbl">Заявок всего</div></div>
+          <div class="stat-card"><div class="stat-num" id="st-today">—</div><div class="stat-lbl">Заявок сегодня</div></div>
+          <div class="stat-card"><div class="stat-num" id="st-bot">—</div><div class="stat-lbl">Бот активен</div></div>
+        </div>
+      </div>
+
+      <div class="a-section">
+        <h3>🎯 По программам</h3>
+        <div id="chart-goal"></div>
+      </div>
+
+      <div class="a-section">
+        <h3>🏫 По классам</h3>
+        <div id="chart-grade"></div>
+      </div>
+
+      <div class="a-section">
+        <h3>👥 Все обращения</h3>
+        <table class="chat-table">
+          <thead><tr>
+            <th>Телефон</th><th>Имя</th><th>Класс</th><th>Программа</th><th>Время</th>
+          </tr></thead>
+          <tbody id="all-chats-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SHEETS ══ -->
+  <div id="s-sheets" class="screen">
+    ${SHEETS_URL
+      ? `<iframe id="sheets-frame" src="${SHEETS_URL}" allow="fullscreen"></iframe>`
+      : `<div id="sheets-empty"><div class="big">📋</div><p>Google Sheets не подключён.</p><p style="font-size:13px;margin-top:8px">Добавьте переменную <strong>SPREADSHEET_ID</strong> в Railway.</p></div>`}
+  </div>
+
 </div>
 
-<div id="app" style="display:none">
-  <div id="sidebar">
-    <div id="sidebar-header">
-      <h1>💬 SmartClub</h1>
-      <button class="header-btn" title="Обновить" onclick="loadChats()">↻</button>
-    </div>
-    <div id="search-box">
-      <input id="search-input" type="search" placeholder="Поиск по номеру..." oninput="filterChats()"/>
-    </div>
-    <div id="chat-list"><div class="empty-list">Загрузка...</div></div>
-  </div>
-
-  <div id="placeholder">
-    <div class="icon">💬</div>
-    <p>Выберите чат из списка</p>
-  </div>
-
-  <div id="conversation">
-    <div id="conv-header">
-      <button id="back-btn" onclick="closeMobileChat()">←</button>
-      <div id="conv-avatar">👤</div>
-      <div id="conv-info">
-        <div id="conv-name">—</div>
-        <div id="conv-status">—</div>
-      </div>
-      <button id="bot-toggle" onclick="toggleBot()">🤖 Бот вкл</button>
-    </div>
-    <div id="messages"></div>
-    <div id="input-bar">
-      <textarea id="msg-input" placeholder="Сообщение..." rows="1"
-        oninput="autoResize(this)" onkeydown="msgKeydown(event)"></textarea>
-      <button id="send-btn" onclick="sendMsg()">➤</button>
-    </div>
-  </div>
+<!-- ── Tab bar ── -->
+<div id="tabbar">
+  <button class="tab active" onclick="switchTab('chats',this)" id="tab-chats">
+    <span class="tab-icon">💬</span>Чаты
+  </button>
+  <button class="tab" onclick="switchTab('analytics',this)" id="tab-analytics">
+    <span class="tab-icon">📊</span>Аналитика
+  </button>
+  <button class="tab" onclick="switchTab('sheets',this)" id="tab-sheets">
+    <span class="tab-icon">📋</span>Таблица
+  </button>
 </div>
 
 <script>
-let pwd = localStorage.getItem('sc_pwd') || '';
 let activePhone = null;
-let chatsData = [];
-let sseConn = null;
+let chatsData   = [];
+let sseConn     = null;
 
-// ── Login ─────────────────────────────────────────────────────────────────────
-function doLogin() {
-  const v = document.getElementById('pwd-input').value;
-  fetch('/admin/api/chats', { headers: { 'x-admin-password': v } })
-    .then(r => { if (r.ok) { pwd = v; localStorage.setItem('sc_pwd', v); showApp(); } else { document.getElementById('login-error').textContent = 'Неверный пароль'; } });
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+function switchTab(name, btn) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('s-' + name).classList.add('active');
+  btn.classList.add('active');
+  if (name === 'analytics') loadAnalytics();
 }
 
-function showApp() {
-  document.getElementById('login-screen').style.display = 'none';
-  document.getElementById('app').style.display = 'flex';
-  loadChats();
-  connectSSE();
-  requestNotifPermission();
-}
-
-// Auto-login if saved
-if (pwd) {
-  fetch('/admin/api/chats', { headers: { 'x-admin-password': pwd } })
-    .then(r => r.ok ? showApp() : null);
-}
-
-// ── API helpers ───────────────────────────────────────────────────────────────
-function api(method, path, body) {
-  return fetch(path, {
-    method, headers: { 'Content-Type': 'application/json', 'x-admin-password': pwd },
-    body: body ? JSON.stringify(body) : undefined
-  }).then(r => r.json());
-}
-
-// ── Chat list ─────────────────────────────────────────────────────────────────
+// ── Load chats ────────────────────────────────────────────────────────────────
 function loadChats() {
-  api('GET', '/admin/api/chats').then(list => {
+  fetch('/admin/api/chats').then(r => r.json()).then(list => {
     chatsData = list;
-    renderChatList(list);
+    renderList(list);
   });
 }
 
-function renderChatList(list) {
+function renderList(list) {
   const el = document.getElementById('chat-list');
-  if (!list.length) { el.innerHTML = '<div class="empty-list">Нет чатов</div>'; return; }
+  if (!list.length) { el.innerHTML = '<div class="empty">Нет чатов</div>'; return; }
   el.innerHTML = list.map(c => \`
-    <div class="chat-item\${c.phone === activePhone ? ' active' : ''}" onclick="openChat('\${c.phone}')">
-      <div class="avatar">👤</div>
-      <div class="chat-info">
-        <div class="chat-name">\${formatPhone(c.phone)}</div>
-        <div class="chat-preview">\${esc(c.lastMsg || 'Нет сообщений')}</div>
+    <div class="ci\${c.phone === activePhone ? ' active' : ''}" onclick="openChat('\${c.phone}')">
+      <div class="av">\${initials(c.name || c.phone)}</div>
+      <div class="ci-info">
+        <div class="ci-name">\${esc(c.name || fmtPhone(c.phone))}</div>
+        <div class="ci-prev">\${esc(c.lastMsg || 'Нет сообщений')}</div>
       </div>
-      <div class="chat-meta">
-        <div class="chat-time">\${formatTime(c.lastTime)}</div>
-        \${c.unread > 0 ? \`<div class="unread-badge">\${c.unread}</div>\` : \`<div class="bot-dot\${c.botActive ? '' : ' off'}" title="\${c.botActive ? 'Бот активен' : 'Менеджер'}"></div>\`}
+      <div class="ci-meta">
+        <div class="ci-time">\${fmtTime(c.lastTime)}</div>
+        \${c.unread > 0 ? \`<div class="badge">\${c.unread}</div>\` : \`<div class="bot-dot\${c.botActive ? '' : ' off'}"></div>\`}
       </div>
     </div>
   \`).join('');
@@ -639,158 +730,187 @@ function renderChatList(list) {
 
 function filterChats() {
   const q = document.getElementById('search-input').value.toLowerCase();
-  renderChatList(q ? chatsData.filter(c => c.phone.includes(q)) : chatsData);
+  renderList(q ? chatsData.filter(c => c.phone.includes(q) || (c.name||'').toLowerCase().includes(q)) : chatsData);
 }
 
 // ── Open chat ─────────────────────────────────────────────────────────────────
 function openChat(phone) {
   activePhone = phone;
   const c = chatsData.find(x => x.phone === phone) || {};
-  document.getElementById('conv-name').textContent = formatPhone(phone);
-  document.getElementById('conv-status').textContent = c.botActive ? '🤖 Бот активен' : '👨‍💼 Менеджер ведёт';
-  updateBotBtn(c.botActive !== false);
-  document.getElementById('placeholder').style.display = 'none';
-  document.getElementById('conversation').classList.add('open');
-  renderChatList(chatsData);
+  document.getElementById('conv-name').textContent = c.name || fmtPhone(phone);
+  document.getElementById('conv-sub').textContent  = c.botActive !== false ? '🤖 Бот активен' : '👨‍💼 Менеджер ведёт';
+  setBotBtn(c.botActive !== false);
+  document.getElementById('conv').classList.add('open');
+  renderList(chatsData);
 
-  api('GET', \`/admin/api/chat/\${phone}\`).then(data => {
-    updateBotBtn(data.botActive !== false);
-    document.getElementById('conv-status').textContent = data.botActive !== false ? '🤖 Бот активен' : '👨‍💼 Менеджер ведёт';
-    renderMessages(data.messages || []);
-    // clear unread in list
-    const entry = chatsData.find(x => x.phone === phone);
-    if (entry) entry.unread = 0;
-    renderChatList(chatsData);
+  fetch(\`/admin/api/chat/\${phone}\`).then(r => r.json()).then(data => {
+    setBotBtn(data.botActive !== false);
+    document.getElementById('conv-sub').textContent = data.botActive !== false ? '🤖 Бот активен' : '👨‍💼 Менеджер ведёт';
+    renderMsgs(data.messages || []);
+    const e = chatsData.find(x => x.phone === phone);
+    if (e) { e.unread = 0; renderList(chatsData); }
   });
 }
 
-function closeMobileChat() {
-  document.getElementById('conversation').classList.remove('open');
+function closeConv() {
+  document.getElementById('conv').classList.remove('open');
   activePhone = null;
 }
 
 // ── Messages ──────────────────────────────────────────────────────────────────
-function renderMessages(msgs) {
+function renderMsgs(msgs) {
   const el = document.getElementById('messages');
-  if (!msgs.length) { el.innerHTML = '<div class="msg-system">Нет сообщений</div>'; return; }
-  el.innerHTML = msgs.map(m => \`
-    <div class="msg \${m.dir}">
-      \${esc(m.text)}
-      <span class="msg-time">\${formatTime(m.time)}</span>
-    </div>
-  \`).join('');
+  el.innerHTML = msgs.length
+    ? msgs.map(m => \`<div class="m \${m.dir}">\${esc(m.text)}<span class="m-t">\${fmtTime(m.time)}</span></div>\`).join('')
+    : '<div class="m-sys">Нет сообщений</div>';
   el.scrollTop = el.scrollHeight;
 }
 
-function appendMessage(msg) {
+function appendMsg(m) {
   const el = document.getElementById('messages');
-  const div = document.createElement('div');
-  div.className = 'msg ' + msg.dir;
-  div.innerHTML = esc(msg.text) + \`<span class="msg-time">\${formatTime(msg.time)}</span>\`;
-  el.appendChild(div);
+  const d = document.createElement('div');
+  d.className = 'm ' + m.dir;
+  d.innerHTML = esc(m.text) + \`<span class="m-t">\${fmtTime(m.time)}</span>\`;
+  el.appendChild(d);
   el.scrollTop = el.scrollHeight;
 }
 
 // ── Send ──────────────────────────────────────────────────────────────────────
 function sendMsg() {
-  const input = document.getElementById('msg-input');
-  const text = input.value.trim();
+  const inp = document.getElementById('msg-inp');
+  const text = inp.value.trim();
   if (!text || !activePhone) return;
-  input.value = '';
-  autoResize(input);
-  api('POST', '/admin/api/send', { phone: activePhone, text })
-    .then(() => loadChats());
+  inp.value = ''; autoResize(inp);
+  fetch('/admin/api/send', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone: activePhone, text })
+  }).then(() => loadChats());
 }
 
-function msgKeydown(e) {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); }
-}
-
-function autoResize(el) {
-  el.style.height = 'auto';
-  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
-}
+function autoResize(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 120) + 'px'; }
 
 // ── Bot toggle ────────────────────────────────────────────────────────────────
 function toggleBot() {
   if (!activePhone) return;
-  api('POST', '/admin/api/toggle-bot', { phone: activePhone }).then(data => {
-    updateBotBtn(data.botActive);
-    document.getElementById('conv-status').textContent = data.botActive ? '🤖 Бот активен' : '👨‍💼 Менеджер ведёт';
-    const entry = chatsData.find(x => x.phone === activePhone);
-    if (entry) { entry.botActive = data.botActive; renderChatList(chatsData); }
+  fetch('/admin/api/toggle-bot', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone: activePhone })
+  }).then(r => r.json()).then(d => {
+    setBotBtn(d.botActive);
+    document.getElementById('conv-sub').textContent = d.botActive ? '🤖 Бот активен' : '👨‍💼 Менеджер ведёт';
+    const e = chatsData.find(x => x.phone === activePhone);
+    if (e) { e.botActive = d.botActive; renderList(chatsData); }
   });
 }
 
-function updateBotBtn(active) {
-  const btn = document.getElementById('bot-toggle');
-  btn.textContent = active ? '🤖 Бот вкл' : '👤 Бот выкл';
-  btn.className = active ? 'bot-toggle' : 'bot-toggle off';
-  btn.id = 'bot-toggle';
+function setBotBtn(on) {
+  const b = document.getElementById('bot-btn');
+  b.className = on ? 'on' : 'off';
+  b.textContent = on ? '🤖 Бот вкл' : '👤 Бот выкл';
+}
+
+// ── Analytics ─────────────────────────────────────────────────────────────────
+function loadAnalytics() {
+  fetch('/admin/api/stats').then(r => r.json()).then(s => {
+    document.getElementById('st-total').textContent = s.totalChats;
+    document.getElementById('st-reg').textContent   = s.totalRegistered;
+    document.getElementById('st-today').textContent = s.todayRegistered;
+    document.getElementById('st-bot').textContent   = s.activeBot;
+    renderBars('chart-goal',  s.byGoal);
+    renderBars('chart-grade', s.byGrade);
+  });
+
+  fetch('/admin/api/chats').then(r => r.json()).then(list => {
+    const tbody = document.getElementById('all-chats-tbody');
+    if (!list.length) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#8696a0;padding:20px">Нет данных</td></tr>'; return; }
+    tbody.innerHTML = list.map(c => \`
+      <tr>
+        <td style="color:#8696a0">\${fmtPhone(c.phone)}</td>
+        <td>\${esc(c.name || '—')}</td>
+        <td>\${esc(c.grade || '—')}</td>
+        <td>\${c.goal ? \`<span class="tag">\${esc(c.goal)}</span>\` : '—'}</td>
+        <td style="color:#8696a0;font-size:12px;white-space:nowrap">\${fmtTime(c.registeredAt || c.lastTime)}</td>
+      </tr>
+    \`).join('');
+  });
+}
+
+function renderBars(elId, data) {
+  const el = document.getElementById(elId);
+  const entries = Object.entries(data).sort((a,b) => b[1]-a[1]);
+  if (!entries.length) { el.innerHTML = '<div style="color:#8696a0;font-size:13px">Нет данных</div>'; return; }
+  const max = entries[0][1];
+  el.innerHTML = entries.map(([k,v]) => \`
+    <div class="bar-row">
+      <div class="bar-label" title="\${esc(k)}">\${esc(k)}</div>
+      <div class="bar-wrap"><div class="bar-fill" style="width:\${Math.round(v/max*100)}%"></div></div>
+      <div class="bar-count">\${v}</div>
+    </div>
+  \`).join('');
 }
 
 // ── SSE ───────────────────────────────────────────────────────────────────────
 function connectSSE() {
   if (sseConn) sseConn.close();
-  sseConn = new EventSource(\`/admin/events?p=\${encodeURIComponent(pwd)}\`);
+  sseConn = new EventSource('/admin/events');
   sseConn.onmessage = e => {
     try {
       const d = JSON.parse(e.data);
-      if (d.type === 'message') handleSSEMessage(d);
-      else if (d.type === 'bot_toggle') handleSSEBotToggle(d);
-    } catch (_) {}
+      if (d.type === 'message') {
+        let entry = chatsData.find(x => x.phone === d.phone);
+        if (!entry) { entry = { phone: d.phone, unread: 0, botActive: true, lastMsg: '', lastTime: '' }; chatsData.unshift(entry); }
+        entry.lastMsg = d.text.slice(0,80);
+        entry.lastTime = d.time;
+        if (d.dir === 'in' && d.phone !== activePhone) { entry.unread++; notify(d.phone, d.text); }
+        if (d.phone === activePhone) appendMsg(d);
+        renderList(chatsData);
+      } else if (d.type === 'read') {
+        const entry = chatsData.find(x => x.phone === d.phone);
+        if (entry) { entry.unread = 0; renderList(chatsData); }
+      } else if (d.type === 'bot_toggle') {
+        const entry = chatsData.find(x => x.phone === d.phone);
+        if (entry) { entry.botActive = d.botActive; renderList(chatsData); }
+      }
+    } catch(_) {}
   };
   sseConn.onerror = () => setTimeout(connectSSE, 3000);
 }
 
-function handleSSEMessage(d) {
-  let entry = chatsData.find(x => x.phone === d.phone);
-  if (!entry) { entry = { phone: d.phone, unread: 0, botActive: true, lastMsg: '', lastTime: '' }; chatsData.unshift(entry); }
-  entry.lastMsg = d.text.slice(0, 60);
-  entry.lastTime = d.time;
-  if (d.dir === 'in' && d.phone !== activePhone) {
-    entry.unread++;
-    showNotification(d.phone, d.text);
+// ── Notifications ─────────────────────────────────────────────────────────────
+function notify(phone, text) {
+  if ('Notification' in window && Notification.permission === 'granted') {
+    new Notification('SmartClub · ' + fmtPhone(phone), { body: text.slice(0,80) });
   }
-  if (d.phone === activePhone) appendMessage(d);
-  renderChatList(chatsData);
-}
-
-function handleSSEBotToggle(d) {
-  const entry = chatsData.find(x => x.phone === d.phone);
-  if (entry) { entry.botActive = d.botActive; renderChatList(chatsData); }
-}
-
-// ── Notifications ──────────────────────────────────────────────────────────────
-function requestNotifPermission() {
-  if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
-}
-
-function showNotification(phone, text) {
-  if (!('Notification' in window) || Notification.permission !== 'granted') return;
-  new Notification('SmartClub · ' + formatPhone(phone), { body: text.slice(0, 80), icon: '/favicon.ico' });
 }
 
 // ── Utils ─────────────────────────────────────────────────────────────────────
-function formatPhone(p) {
+function fmtPhone(p) {
   if (!p) return '—';
-  const d = p.replace(/\\D/g, '');
-  if (d.length === 11) return '+' + d[0] + ' (' + d.slice(1,4) + ') ' + d.slice(4,7) + '-' + d.slice(7,9) + '-' + d.slice(9);
-  return '+' + p;
+  const d = p.replace(/\\D/g,'');
+  if (d.length===11) return '+'+d[0]+' ('+d.slice(1,4)+') '+d.slice(4,7)+'-'+d.slice(7,9)+'-'+d.slice(9);
+  return '+'+p;
 }
-
-function formatTime(iso) {
+function fmtTime(iso) {
   if (!iso) return '';
-  const d = new Date(iso);
-  const now = new Date();
-  const sameDay = d.toDateString() === now.toDateString();
-  if (sameDay) return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+  const d = new Date(iso), now = new Date();
+  if (d.toDateString()===now.toDateString()) return d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+  return d.toLocaleDateString('ru-RU',{day:'numeric',month:'short'});
+}
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/\\n/g,'<br>');
+}
+function initials(s) {
+  if (!s) return '👤';
+  const parts = s.trim().split(' ');
+  if (parts[0].match(/^\\d/)) return s.slice(-2);
+  return (parts[0][0]||'')+(parts[1]?.[0]||'');
 }
 
-function esc(s) {
-  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/\\n/g,'<br>');
-}
+// ── Init ──────────────────────────────────────────────────────────────────────
+loadChats();
+connectSSE();
+if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
 </script>
 </body>
 </html>`;
@@ -803,9 +923,10 @@ app.get('/admin', (_req, res) => {
 // ─── Запуск ───────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log(`✅ SmartClub Autobot + Admin запущен на порту ${PORT}`);
+  console.log(`✅ SmartClub Autobot + Admin PWA запущен на порту ${PORT}`);
   console.log(`🔑 Token:    ${TOKEN    ? 'задан' : '❌ НЕ ЗАДАН'}`);
   console.log(`📱 Phone ID: ${PHONE_ID || '❌ НЕ ЗАДАН'}`);
-  console.log(`🔒 Admin:    /admin (пароль: ${ADMIN_PASSWORD})`);
+  console.log(`📋 Sheets:   ${SPREADSHEET_ID || '❌ не задан'}`);
   console.log(`🤖 Flow ID:  ${FLOW_ID}`);
+  console.log(`🌐 Admin:    /admin`);
 });
