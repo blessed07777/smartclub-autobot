@@ -41,7 +41,7 @@ const chats = new Map();
 
 function getChat(phone) {
   if (!chats.has(phone)) {
-    chats.set(phone, { messages: [], unread: 0, botActive: true, lastMsg: '', lastTime: '', grade: '', goal: '', name: '', registeredAt: null });
+    chats.set(phone, { messages: [], unread: 0, botActive: true, greeted: false, lastMsg: '', lastTime: '', grade: '', goal: '', name: '', registeredAt: null });
   }
   return chats.get(phone);
 }
@@ -330,10 +330,21 @@ app.post('/webhook', async (req, res) => {
           `🕐 Пн–Сб · 09:00–20:00\n\nЖдём вас! 🌟`
         );
 
+        // Воронка завершена — бот выключается, дальше ведёт менеджер
+        chat.botActive = false;
+        sseNotify({ type: 'bot_toggle', phone, botActive: false });
+
       } else if (st.state === 'awaiting_flow') {
+        // Один раз напомнить про флоу, больше не реагировать
         await sendText(phone, `⬆️ Карточка с программой уже отправлена выше.\n\nОткройте её и нажмите *«Записаться на пробный урок»* 👆`);
       } else {
-        await sendWelcome(phone);
+        // Приветствие только на самое первое сообщение
+        if (!chat.greeted) {
+          chat.greeted = true;
+          await sendWelcome(phone);
+        } else {
+          console.log(`🔕 ${phone} уже получил приветствие, бот молчит`);
+        }
       }
     }
 
