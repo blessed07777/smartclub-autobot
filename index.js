@@ -716,6 +716,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 #no-chat .nc-icon{font-size:80px;opacity:.15;}
 #no-chat p{font-size:16px;font-weight:500;}
 
+/* Notif banner */
+#notif-banner{background:linear-gradient(135deg,var(--accent),var(--accent2));margin:10px 12px;border-radius:var(--radius);padding:14px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;box-shadow:0 4px 16px rgba(99,102,241,.35);}
+#notif-banner .nb-icon{font-size:28px;flex-shrink:0;}
+#notif-banner .nb-text{flex:1;}
+#notif-banner .nb-title{font-size:14px;font-weight:700;color:#fff;}
+#notif-banner .nb-sub{font-size:12px;color:rgba(255,255,255,.75);margin-top:2px;}
+#notif-banner .nb-btn{background:rgba(255,255,255,.2);border:none;color:#fff;font-size:12px;font-weight:700;padding:6px 14px;border-radius:20px;cursor:pointer;white-space:nowrap;}
+#notif-banner.hidden{display:none;}
+
 /* ══ ANALYTICS ═════════════════════════════════════════════════════════════ */
 #s-analytics{background:var(--bg);}
 #analytics-inner{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px;}
@@ -812,6 +821,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
           <input id="search-input" type="search" placeholder="Поиск по имени или номеру..." oninput="filterChats()"/>
         </div>
       </div>
+      <!-- Баннер включения уведомлений -->
+      <div id="notif-banner" onclick="askNotifPermission()">
+        <div class="nb-icon">🔔</div>
+        <div class="nb-text">
+          <div class="nb-title">Включить уведомления</div>
+          <div class="nb-sub">Получайте баннеры о новых заявках</div>
+        </div>
+        <button class="nb-btn">Включить</button>
+      </div>
+
       <div id="filter-chips">
         <button class="chip active" onclick="setFilter('all',this)">Все</button>
         <button class="chip" onclick="setFilter('new',this)">🆕 Новые</button>
@@ -1301,51 +1320,6 @@ function statusLabel(s) {
 }
 
 // ── Push notifications ────────────────────────────────────────────────────────
-async function initPush() {
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-    console.log('Push не поддерживается этим браузером');
-    return;
-  }
-  try {
-    const reg = await navigator.serviceWorker.register('/sw.js');
-    await navigator.serviceWorker.ready;
-
-    // Проверяем есть ли уже подписка
-    let sub = await reg.pushManager.getSubscription();
-
-    // Запрашиваем разрешение если нет
-    const perm = await Notification.requestPermission();
-    if (perm !== 'granted') {
-      toast('⚠️ Разрешите уведомления в настройках');
-      return;
-    }
-
-    if (!sub) {
-      // Получаем VAPID публичный ключ
-      const { key } = await fetch('/admin/api/vapid-key').then(r => r.json());
-      if (!key) { console.log('VAPID ключ не задан на сервере'); return; }
-
-      sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(key)
-      });
-
-      // Сохраняем подписку на сервере
-      const devId = localStorage.getItem('sc_push_id') || ('dev_' + Date.now());
-      localStorage.setItem('sc_push_id', devId);
-      await fetch('/admin/api/push-subscribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subscription: sub, id: devId })
-      });
-      toast('🔔 Push-уведомления включены!');
-      console.log('✅ Push подписка активирована');
-    }
-  } catch (e) {
-    console.error('Push init error:', e);
-  }
-}
-
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -1353,14 +1327,72 @@ function urlBase64ToUint8Array(base64String) {
   return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
 }
 
+async function checkNotifBanner() {
+  const banner = document.getElementById('notif-banner');
+  if (!banner) return;
+  // Скрываем если push не поддерживается или уже разрешено
+  if (!('Notification' in window) || !('PushManager' in window)) {
+    banner.classList.add('hidden'); return;
+  }
+  if (Notification.permission === 'granted') {
+    banner.classList.add('hidden');
+    await subscribePush(); // тихо переподписываемся при каждом открытии
+    return;
+  }
+  if (Notification.permission === 'denied') {
+    // Показываем инструкцию вместо кнопки
+    banner.querySelector('.nb-sub').textContent = 'Разрешите в Настройки → Safari → Уведомления';
+    banner.querySelector('.nb-btn').textContent = 'Как включить?';
+    banner.onclick = () => toast('Настройки → Safari → Уведомления → ваш сайт → Разрешить');
+  }
+}
+
+async function askNotifPermission() {
+  if (!('Notification' in window)) {
+    toast('⚠️ Ваш браузер не поддерживает уведомления'); return;
+  }
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    toast('⚠️ Установите приложение на домашний экран через Safari'); return;
+  }
+  const perm = await Notification.requestPermission();
+  if (perm === 'granted') {
+    document.getElementById('notif-banner').classList.add('hidden');
+    await subscribePush();
+    toast('🔔 Уведомления включены!');
+  } else {
+    toast('⚠️ Разрешение отклонено. Зайдите в Настройки → Safari → Уведомления');
+  }
+}
+
+async function subscribePush() {
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      const { key } = await fetch('/admin/api/vapid-key').then(r => r.json());
+      if (!key) return;
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(key)
+      });
+    }
+    const devId = localStorage.getItem('sc_push_id') || ('dev_' + Date.now());
+    localStorage.setItem('sc_push_id', devId);
+    await fetch('/admin/api/push-subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subscription: sub, id: devId })
+    });
+    console.log('✅ Push подписка активна');
+  } catch (e) { console.error('Push subscribe error:', e.message); }
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 loadChats();
 connectSSE();
-initPush();
-// Unlock audio on first touch
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').then(() => checkNotifBanner()).catch(()=>{});
 document.addEventListener('touchstart', () => {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  initPush(); // iOS требует user gesture для push
 }, { once: true });
 </script>
 </body>
