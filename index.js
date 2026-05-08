@@ -1151,8 +1151,8 @@ app.get('/admin', (_req, res) => {
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log(\`✅ SmartClub CRM запущен на порту \${PORT}\`);
-  console.log(\`🌐 Панель: /admin\`);
-  console.log(\`📱 Phone ID: \${PHONE_ID || '❌ не задан'}\`);
-  console.log(\`📋 Sheets:   \${SPREADSHEET_ID || '❌ не задан'}\`);
+  console.log(`✅ SmartClub CRM запущен на порту ${PORT}`);
+  console.log(`🌐 Панель: /admin`);
+  console.log(`📱 Phone ID: ${PHONE_ID || '❌ не задан'}`);
+  console.log(`📋 Sheets:   ${SPREADSHEET_ID || '❌ не задан'}`);
 });
