@@ -1,5 +1,6 @@
-const express = require('express');
+const express  = require('express');
 const { google } = require('googleapis');
+const webpush  = require('web-push');
 const app = express();
 app.use(express.json());
 
@@ -10,6 +11,18 @@ const SPREADSHEET_ID = process.env.SPREADSHEET_ID || '';
 const GOOGLE_CREDS   = process.env.GOOGLE_CREDENTIALS || '';
 const FLOW_ID        = process.env.FLOW_ID         || '806320295577232';
 const MANAGER_PHONE  = process.env.MANAGER_PHONE   || '77712088880';
+const VAPID_PUBLIC   = process.env.VAPID_PUBLIC    || '';
+const VAPID_PRIVATE  = process.env.VAPID_PRIVATE   || '';
+
+if (VAPID_PUBLIC && VAPID_PRIVATE) {
+  webpush.setVapidDetails('mailto:admin@smartclub.kz', VAPID_PUBLIC, VAPID_PRIVATE);
+  console.log('🔔 Web Push: VAPID ключи загружены');
+} else {
+  console.warn('⚠️ Web Push: VAPID_PUBLIC / VAPID_PRIVATE не заданы — push-уведомления отключены');
+}
+
+// Хранилище push-подписок (в памяти; при рестарте пользователь подпишется снова)
+const pushSubscriptions = new Map();
 
 const GRADE_LABEL = {
   g3: '3–4 класс', g5: '5–6 класс', g7: '7–8 класс', g9: '9 класс', g10: '10–11 класс'
@@ -84,11 +97,58 @@ async function sendText(to, text) {
   await waPost({ messaging_product: 'whatsapp', to, type: 'text', text: { body: text } });
 }
 
+// ─── Web Push ─────────────────────────────────────────────────────────────────
+async function sendPush(title, body, data = {}) {
+  if (!VAPID_PUBLIC || !VAPID_PRIVATE || pushSubscriptions.size === 0) return;
+  const payload = JSON.stringify({ title, body, ...data });
+  for (const [id, sub] of pushSubscriptions) {
+    try {
+      await webpush.sendNotification(sub, payload);
+      console.log(`🔔 Push отправлен: ${title}`);
+    } catch (e) {
+      if (e.statusCode === 410 || e.statusCode === 404) {
+        pushSubscriptions.delete(id); // подписка устарела
+      } else {
+        console.error('❌ Push error:', e.message);
+      }
+    }
+  }
+}
+
+// Время последнего сообщения от менеджера (нужно для 24ч-окна WhatsApp)
+let managerLastMsgAt = 0;
+
 async function notifyManager(text) {
   if (!MANAGER_PHONE) return;
+
+  // WhatsApp разрешает слать обычный текст только если менеджер писал боту в последние 23 часа
+  const hoursSince = (Date.now() - managerLastMsgAt) / 36e5;
+
+  if (hoursSince > 23) {
+    // Сессия истекла — отправляем шаблон-напоминание чтобы менеджер написал "старт"
+    console.warn(`⚠️ Нет активной сессии с менеджером (${Math.round(hoursSince)}ч). Отправляем напоминание через шаблон...`);
+    try {
+      const NOTIFY_TEMPLATE = process.env.NOTIFY_TEMPLATE || '';
+      if (NOTIFY_TEMPLATE) {
+        await waPost({
+          messaging_product: 'whatsapp', to: MANAGER_PHONE,
+          type: 'template',
+          template: { name: NOTIFY_TEMPLATE, language: { code: 'ru' } }
+        });
+      } else {
+        console.warn('⚠️ NOTIFY_TEMPLATE не задан. Менеджер должен написать "старт" боту для активации сессии.');
+      }
+    } catch (e) { console.error('❌ notifyManager template:', e.message); }
+    return;
+  }
+
   try {
-    await waPost({ messaging_product: 'whatsapp', to: MANAGER_PHONE, type: 'text', text: { body: text } });
-    console.log(`📲 Менеджер уведомлён: ${MANAGER_PHONE}`);
+    const res = await waPost({ messaging_product: 'whatsapp', to: MANAGER_PHONE, type: 'text', text: { body: text } });
+    if (res.error) {
+      console.error(`❌ Уведомление менеджеру не отправлено: ${res.error.message}`);
+    } else {
+      console.log(`📲 Менеджер уведомлён: ${MANAGER_PHONE}`);
+    }
   } catch (e) { console.error('❌ notifyManager:', e.message); }
 }
 
@@ -190,6 +250,20 @@ app.post('/webhook', async (req, res) => {
     const msg = req.body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     if (!msg) return;
     const phone = msg.from;
+
+    // ── Сообщение от менеджера — обновляем время сессии ──────────────────────
+    if (phone.replace(/\D/g,'') === MANAGER_PHONE.replace(/\D/g,'')) {
+      managerLastMsgAt = Date.now();
+      console.log(`👔 Менеджер написал боту — сессия активна на 23ч`);
+      const body = msg.text?.body?.trim().toLowerCase();
+      if (body === 'старт' || body === 'start') {
+        await waPost({ messaging_product: 'whatsapp', to: phone, type: 'text',
+          text: { body: `✅ Сессия активирована!\n\nТеперь бот будет отправлять вам уведомления о новых заявках в течение 23 часов.\n\nДля продления — просто напишите *"старт"* снова.` }
+        });
+      }
+      return;
+    }
+
     const st    = userState.get(phone) || { state: 'new' };
     const chat  = getChat(phone);
 
@@ -251,16 +325,25 @@ app.post('/webhook', async (req, res) => {
           `🎯 Программа: *${goalLabel}*\n` +
           `🕐 Время: ${now}`
         );
+        await sendPush(
+          '✅ Новая заявка!',
+          `${text} · ${gradeLabel} · ${goalLabel}`,
+          { url: '/admin', phone }
+        );
       } else if (st.state === 'awaiting_flow') {
         await sendText(phone, `⬆️ Карточка уже отправлена выше. Откройте её и нажмите *«Записаться»* 👆`);
       } else {
         if (!chat.greeted) {
           chat.greeted = true;
           await sendWelcome(phone);
+          const msgTime = new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Almaty' });
           await notifyManager(
-            `🆕 *Новый клиент написал боту!*\n\n` +
-            `📱 Номер: +${phone}\n` +
-            `🕐 Время: ${new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Almaty' })}`
+            `🆕 *Новый клиент написал боту!*\n\n📱 Номер: +${phone}\n🕐 Время: ${msgTime}`
+          );
+          await sendPush(
+            '🆕 Новый клиент!',
+            `Номер: +${phone}\n${msgTime}`,
+            { url: '/admin' }
           );
         }
       }
@@ -358,6 +441,26 @@ app.get('/admin/api/stats', (_req, res) => {
   });
 });
 
+// ── Push subscription endpoints ───────────────────────────────────────────────
+app.get('/admin/api/vapid-key', (_req, res) => {
+  res.json({ key: VAPID_PUBLIC || null });
+});
+
+app.post('/admin/api/push-subscribe', (req, res) => {
+  const { subscription, id } = req.body;
+  if (!subscription) return res.status(400).json({ error: 'subscription required' });
+  const subId = id || 'default';
+  pushSubscriptions.set(subId, subscription);
+  console.log(`🔔 Push подписка сохранена (${pushSubscriptions.size} всего)`);
+  res.json({ ok: true });
+});
+
+app.delete('/admin/api/push-subscribe', (req, res) => {
+  const { id } = req.body;
+  pushSubscriptions.delete(id || 'default');
+  res.json({ ok: true });
+});
+
 app.get('/manifest.json', (_req, res) => res.json({
   name: 'SmartClub CRM', short_name: 'SmartClub', start_url: '/admin',
   display: 'standalone', background_color: '#0f172a', theme_color: '#6366f1',
@@ -366,7 +469,39 @@ app.get('/manifest.json', (_req, res) => res.json({
 
 app.get('/sw.js', (_req, res) => {
   res.setHeader('Content-Type', 'application/javascript');
-  res.send(`self.addEventListener('push',e=>{const d=e.data?e.data.json():{};self.registration.showNotification(d.title||'SmartClub',{body:d.body||'',icon:'/favicon.ico'})});`);
+  res.setHeader('Cache-Control', 'no-cache');
+  res.send(`
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
+
+self.addEventListener('push', e => {
+  let d = { title: 'SmartClub CRM', body: 'Новое сообщение', url: '/admin' };
+  try { if (e.data) d = { ...d, ...e.data.json() }; } catch(_) {}
+  e.waitUntil(
+    self.registration.showNotification(d.title, {
+      body: d.body,
+      icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="24" fill="%236366f1"/><text y=".9em" font-size="70" x="15">💬</text></svg>',
+      badge: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="24" fill="%236366f1"/><text y=".9em" font-size="70" x="15">💬</text></svg>',
+      tag: 'smartclub-msg',
+      renotify: true,
+      vibrate: [200, 100, 200],
+      data: { url: d.url || '/admin' }
+    })
+  );
+});
+
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const url = e.notification.data?.url || '/admin';
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
+      const existing = clients.find(c => c.url.includes('/admin'));
+      if (existing) return existing.focus();
+      return self.clients.openWindow(url);
+    })
+  );
+});
+`);
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1158,13 +1293,68 @@ function statusLabel(s) {
   return {new:'🆕 Новый',call:'📞 Позвонить',reply:'💬 Ответить',registered:'✅ Записан',declined:'🚫 Отказ'}[s] || '🆕 Новый';
 }
 
+// ── Push notifications ────────────────────────────────────────────────────────
+async function initPush() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    console.log('Push не поддерживается этим браузером');
+    return;
+  }
+  try {
+    const reg = await navigator.serviceWorker.register('/sw.js');
+    await navigator.serviceWorker.ready;
+
+    // Проверяем есть ли уже подписка
+    let sub = await reg.pushManager.getSubscription();
+
+    // Запрашиваем разрешение если нет
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') {
+      toast('⚠️ Разрешите уведомления в настройках');
+      return;
+    }
+
+    if (!sub) {
+      // Получаем VAPID публичный ключ
+      const { key } = await fetch('/admin/api/vapid-key').then(r => r.json());
+      if (!key) { console.log('VAPID ключ не задан на сервере'); return; }
+
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(key)
+      });
+
+      // Сохраняем подписку на сервере
+      const devId = localStorage.getItem('sc_push_id') || ('dev_' + Date.now());
+      localStorage.setItem('sc_push_id', devId);
+      await fetch('/admin/api/push-subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subscription: sub, id: devId })
+      });
+      toast('🔔 Push-уведомления включены!');
+      console.log('✅ Push подписка активирована');
+    }
+  } catch (e) {
+    console.error('Push init error:', e);
+  }
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 loadChats();
 connectSSE();
-if ('Notification' in window && Notification.permission==='default') Notification.requestPermission();
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
+initPush();
 // Unlock audio on first touch
-document.addEventListener('touchstart', () => { if(!audioCtx) audioCtx=new(window.AudioContext||window.webkitAudioContext)(); }, {once:true});
+document.addEventListener('touchstart', () => {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  initPush(); // iOS требует user gesture для push
+}, { once: true });
 </script>
 </body>
 </html>`;
