@@ -1,7 +1,14 @@
 const express  = require('express');
 const { google } = require('googleapis');
-const webpush  = require('web-push');
 const app = express();
+
+// web-push опциональный — если не установлен, push просто отключается
+let webpush = null;
+try {
+  webpush = require('web-push');
+} catch (_) {
+  console.warn('⚠️ web-push не установлен. Push-уведомления отключены. Добавьте "web-push" в package.json и передеплойте.');
+}
 app.use(express.json());
 
 const TOKEN          = process.env.WHATSAPP_TOKEN;
@@ -14,10 +21,10 @@ const MANAGER_PHONE  = process.env.MANAGER_PHONE   || '77712088880';
 const VAPID_PUBLIC   = process.env.VAPID_PUBLIC    || '';
 const VAPID_PRIVATE  = process.env.VAPID_PRIVATE   || '';
 
-if (VAPID_PUBLIC && VAPID_PRIVATE) {
+if (webpush && VAPID_PUBLIC && VAPID_PRIVATE) {
   webpush.setVapidDetails('mailto:admin@smartclub.kz', VAPID_PUBLIC, VAPID_PRIVATE);
   console.log('🔔 Web Push: VAPID ключи загружены');
-} else {
+} else if (webpush) {
   console.warn('⚠️ Web Push: VAPID_PUBLIC / VAPID_PRIVATE не заданы — push-уведомления отключены');
 }
 
@@ -99,7 +106,7 @@ async function sendText(to, text) {
 
 // ─── Web Push ─────────────────────────────────────────────────────────────────
 async function sendPush(title, body, data = {}) {
-  if (!VAPID_PUBLIC || !VAPID_PRIVATE || pushSubscriptions.size === 0) return;
+  if (!webpush || !VAPID_PUBLIC || !VAPID_PRIVATE || pushSubscriptions.size === 0) return;
   const payload = JSON.stringify({ title, body, ...data });
   for (const [id, sub] of pushSubscriptions) {
     try {
