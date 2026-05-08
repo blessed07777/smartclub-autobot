@@ -9,6 +9,7 @@ const VERIFY_TOKEN   = process.env.VERIFY_TOKEN    || 'smartclub2024';
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID || '';
 const GOOGLE_CREDS   = process.env.GOOGLE_CREDENTIALS || '';
 const FLOW_ID        = process.env.FLOW_ID         || '806320295577232';
+const MANAGER_PHONE  = process.env.MANAGER_PHONE   || '77712088880';
 
 const GRADE_LABEL = {
   g3: '3–4 класс', g5: '5–6 класс', g7: '7–8 класс', g9: '9 класс', g10: '10–11 класс'
@@ -81,6 +82,14 @@ async function waPost(body) {
 async function sendText(to, text) {
   storeMsg(to, 'out', text);
   await waPost({ messaging_product: 'whatsapp', to, type: 'text', text: { body: text } });
+}
+
+async function notifyManager(text) {
+  if (!MANAGER_PHONE) return;
+  try {
+    await waPost({ messaging_product: 'whatsapp', to: MANAGER_PHONE, type: 'text', text: { body: text } });
+    console.log(`📲 Менеджер уведомлён: ${MANAGER_PHONE}`);
+  } catch (e) { console.error('❌ notifyManager:', e.message); }
 }
 
 async function sendGradeList(to) {
@@ -234,10 +243,26 @@ app.post('/webhook', async (req, res) => {
         await sendText(phone, `📍 *Как нас найти:*\n\nАстана, Первая линия, *SmartClub*\n🗺 https://2gis.kz/astana/geo/70000001102430714\n\n🕐 Пн–Сб · 09:00–20:00\n\nЖдём вас! 🌟`);
         chat.botActive = false;
         sseNotify({ type: 'bot_toggle', phone, botActive: false });
+        await notifyManager(
+          `✅ *Новая заявка на пробный урок!*\n\n` +
+          `👦 Имя ребёнка: *${text}*\n` +
+          `📱 Номер: +${phone}\n` +
+          `📚 Класс: *${gradeLabel}*\n` +
+          `🎯 Программа: *${goalLabel}*\n` +
+          `🕐 Время: ${now}`
+        );
       } else if (st.state === 'awaiting_flow') {
         await sendText(phone, `⬆️ Карточка уже отправлена выше. Откройте её и нажмите *«Записаться»* 👆`);
       } else {
-        if (!chat.greeted) { chat.greeted = true; await sendWelcome(phone); }
+        if (!chat.greeted) {
+          chat.greeted = true;
+          await sendWelcome(phone);
+          await notifyManager(
+            `🆕 *Новый клиент написал боту!*\n\n` +
+            `📱 Номер: +${phone}\n` +
+            `🕐 Время: ${new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Almaty' })}`
+          );
+        }
       }
     }
   } catch (err) { console.error('❌ Webhook error:', err.message); }
