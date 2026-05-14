@@ -319,7 +319,7 @@ app.post('/webhook', async (req, res) => {
         chat.name = text; chat.grade = gradeLabel; chat.goal = goalLabel;
         chat.registeredAt = now; chat.status = 'registered';
         await appendToSheet([now, text, phone, gradeLabel, goalLabel, 'Новая заявка']);
-        await sendText(phone, `✅ *${text}*, заявка принята!\n\nПрограмма: *${goalLabel}* · ${gradeLabel}\n\nНаш менеджер позвонит вам *в течение 15 минут* и запишет на пробный урок.`);
+        await sendText(phone, `✅ *${text}*, заявка принята!\n\nПрограмма: *${goalLabel}* · ${gradeLabel}`);
         await sendText(phone, `🎁 *Что вас ждёт на первом визите:*\n\n📝 Пробный урок — *бесплатно*\n🔍 Диагностика знаний от эксперта — *бесплатно*\n📊 Личный план подготовки\n👨‍🏫 Знакомство с преподавателем\n\nВсё без обязательств 💪`);
         await sendText(phone, `📍 *Как нас найти:*\n\nАстана, Первая линия, *SmartClub*\n🗺 https://2gis.kz/astana/geo/70000001102430714\n\n🕐 Пн–Сб · 09:00–20:00\n\nЖдём вас! 🌟`);
         chat.botActive = false;
